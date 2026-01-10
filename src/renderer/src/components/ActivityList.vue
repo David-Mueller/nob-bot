@@ -6,8 +6,8 @@ type Activity = {
   thema: string | null
   beschreibung: string
   stunden: number | null
-  km: number | null
-  auslagen: number | null
+  km: number
+  auslagen: number
   datum: string | null
 }
 

@@ -46,6 +46,7 @@ interface WhisperAPI {
 
 interface LLMAPI {
   parse: (transcript: string, clients?: string[], themes?: string[]) => Promise<Activity>
+  parseCorrection: (existingActivity: Activity, correctionTranscript: string) => Promise<Activity>
   isReady: () => Promise<boolean>
 }
 

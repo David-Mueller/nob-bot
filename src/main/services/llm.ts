@@ -110,3 +110,57 @@ export async function parseActivity(
 export function isLLMReady(): boolean {
   return llm !== null || !!process.env.OPENAI_API_KEY
 }
+
+const CORRECTION_PROMPT = `Du bist ein Assistent zur Korrektur von Arbeitsaktivitäten.
+
+Der Benutzer hat eine bestehende Aktivität und möchte sie per Spracheingabe korrigieren.
+Analysiere die Korrektur und aktualisiere NUR die Felder, die explizit erwähnt werden.
+Alle anderen Felder bleiben unverändert.
+
+BESTEHENDE AKTIVITÄT:
+{existingActivity}
+
+KORREKTUR-ANWEISUNG:
+{correction}
+
+Beispiele:
+- "es waren doch 500km" → nur km ändern
+- "nicht IDT sondern LOTUS" → nur auftraggeber ändern
+- "das war eine Stunde, nicht eine halbe" → nur stunden ändern
+- "Thema war eigentlich Hakobu" → nur thema ändern
+
+Gib die vollständige aktualisierte Aktivität zurück.`
+
+export async function parseCorrection(
+  existingActivity: Activity,
+  correctionTranscript: string
+): Promise<Activity> {
+  if (!llm) {
+    initLLM()
+  }
+
+  if (!llm) {
+    throw new Error('LLM not initialized')
+  }
+
+  const structuredLLM = llm.withStructuredOutput(ActivitySchema)
+
+  const activityStr = Object.entries(existingActivity)
+    .map(([k, v]) => `- ${k}: ${v ?? 'nicht angegeben'}`)
+    .join('\n')
+
+  const prompt = CORRECTION_PROMPT
+    .replace('{existingActivity}', activityStr)
+    .replace('{correction}', correctionTranscript)
+
+  const result = await structuredLLM.invoke([
+    { role: 'system', content: prompt },
+    { role: 'user', content: correctionTranscript }
+  ])
+
+  return {
+    ...result,
+    km: result.km ?? 0,
+    auslagen: result.auslagen ?? 0
+  } as Activity
+}

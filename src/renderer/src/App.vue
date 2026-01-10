@@ -9,8 +9,8 @@ type Activity = {
   thema: string | null
   beschreibung: string
   stunden: number | null
-  km: number | null
-  auslagen: number | null
+  km: number
+  auslagen: number
   datum: string | null
 }
 
@@ -49,6 +49,19 @@ let entryId = 0
 // Count unsaved entries for badge
 const unsavedCount = computed(() => entries.value.filter(e => !e.saved).length)
 
+// Editing context for voice correction
+const editingContextText = computed(() => {
+  if (!editingEntry.value) return undefined
+  const a = editingEntry.value.activity
+  const parts: string[] = []
+  if (a.auftraggeber) parts.push(a.auftraggeber)
+  if (a.thema) parts.push(a.thema)
+  parts.push(a.beschreibung)
+  if (a.stunden !== null) parts.push(`${a.stunden}h`)
+  if (a.km && a.km > 0) parts.push(`${a.km}km`)
+  return parts.join(' • ')
+})
+
 const {
   status: whisperStatus,
   loadingProgress,
@@ -74,6 +87,8 @@ const handleRecorded = async (blob: Blob): Promise<void> => {
   showRecording.value = false
   isProcessing.value = true
 
+  const isEditing = editingEntry.value !== null
+
   // Step 1: Transcribe
   processingStep.value = 'transcribing'
   const result = await transcribe(blob)
@@ -82,13 +97,14 @@ const handleRecorded = async (blob: Blob): Promise<void> => {
     addMessage({ type: 'error', content: 'Transkription fehlgeschlagen' })
     isProcessing.value = false
     processingStep.value = null
+    editingEntry.value = null
     return
   }
 
   // Add user message with transcription
   addMessage({
     type: 'user',
-    content: result.text,
+    content: isEditing ? `✏️ ${result.text}` : result.text,
     language: result.language,
     mode: result.mode
   })
@@ -98,23 +114,45 @@ const handleRecorded = async (blob: Blob): Promise<void> => {
   // Step 2: Parse with LLM
   processingStep.value = 'parsing'
   try {
-    const activity = await window.api?.llm.parse(result.text, ['IDT', 'LOTUS', 'ORLEN'], [])
-    if (activity) {
-      addMessage({
-        type: 'assistant',
-        content: formatActivity(activity),
-        activity
-      })
-      console.log('Parsed activity:', activity)
+    if (isEditing && editingEntry.value) {
+      // Correction mode: update existing entry
+      const correctedActivity = await window.api?.llm.parseCorrection(
+        editingEntry.value.activity,
+        result.text
+      )
+      if (correctedActivity) {
+        // Update the entry
+        editingEntry.value.activity = correctedActivity
+        editingEntry.value.transcript += ` → ${result.text}`
 
-      // Add to entries list
-      entries.value.push({
-        id: ++entryId,
-        activity,
-        transcript: result.text,
-        timestamp: new Date(),
-        saved: false
-      })
+        addMessage({
+          type: 'assistant',
+          content: `✏️ Korrigiert:\n${formatActivity(correctedActivity)}`,
+          activity: correctedActivity
+        })
+        console.log('Corrected activity:', correctedActivity)
+      }
+      editingEntry.value = null
+    } else {
+      // New entry mode
+      const activity = await window.api?.llm.parse(result.text, ['IDT', 'LOTUS', 'ORLEN'], [])
+      if (activity) {
+        addMessage({
+          type: 'assistant',
+          content: formatActivity(activity),
+          activity
+        })
+        console.log('Parsed activity:', activity)
+
+        // Add to entries list
+        entries.value.push({
+          id: ++entryId,
+          activity,
+          transcript: result.text,
+          timestamp: new Date(),
+          saved: false
+        })
+      }
     }
   } catch (err) {
     console.error('LLM parsing failed:', err)
@@ -122,6 +160,7 @@ const handleRecorded = async (blob: Blob): Promise<void> => {
       type: 'error',
       content: err instanceof Error ? err.message : 'Parsing fehlgeschlagen'
     })
+    editingEntry.value = null
   }
 
   isProcessing.value = false
@@ -130,6 +169,7 @@ const handleRecorded = async (blob: Blob): Promise<void> => {
 
 const handleCancelled = (): void => {
   showRecording.value = false
+  editingEntry.value = null
 }
 
 const formatActivity = (activity: Activity): string => {
@@ -177,8 +217,9 @@ const handleSaveEntry = async (entry: ActivityEntry): Promise<void> => {
 
 const handleEditEntry = (entry: ActivityEntry): void => {
   editingEntry.value = entry
-  // TODO: Open edit modal
-  console.log('Editing entry:', entry)
+  showRecording.value = true
+  currentView.value = 'record'
+  console.log('Editing entry via voice:', entry)
 }
 
 const handleDeleteEntry = (entry: ActivityEntry): void => {
@@ -383,6 +424,7 @@ onUnmounted(() => {
     <RecordingWindow
       v-if="showRecording"
       :auto-start="true"
+      :editing-context="editingContextText"
       @recorded="handleRecorded"
       @cancelled="handleCancelled"
       class="absolute inset-0 z-10"

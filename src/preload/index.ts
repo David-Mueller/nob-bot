@@ -65,6 +65,9 @@ const api = {
     parse: (transcript: string, clients?: string[], themes?: string[]): Promise<Activity> => {
       return ipcRenderer.invoke('llm:parse', transcript, clients, themes)
     },
+    parseCorrection: (existingActivity: Activity, correctionTranscript: string): Promise<Activity> => {
+      return ipcRenderer.invoke('llm:parseCorrection', existingActivity, correctionTranscript)
+    },
     isReady: (): Promise<boolean> => {
       return ipcRenderer.invoke('llm:isReady')
     }
