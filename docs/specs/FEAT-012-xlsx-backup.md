@@ -112,3 +112,7 @@ async function cleanOldBackups(backupDir: string, baseName: string): Promise<voi
 - Backup MUSS vor dem Schreiben abgeschlossen sein
 - Bei Backup-Fehler: Schreibvorgang abbrechen
 - Atomare Operation: Erst Backup, dann Schreiben
+
+## Related
+
+- [FEAT-016: Auftraggeber-XLSX-Mapping](FEAT-016-auftraggeber-xlsx-mapping.md) - nutzt diesen Backup-Service
