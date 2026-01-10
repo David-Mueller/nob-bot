@@ -68,12 +68,47 @@ interface ExcelAPI {
   getActivities: (month: number) => Promise<ExcelActivity[]>
 }
 
+interface XlsxFileConfig {
+  path: string
+  auftraggeber: string
+  jahr: number
+  active: boolean
+}
+
+interface AppConfig {
+  xlsxBasePath: string
+  xlsxFiles: XlsxFileConfig[]
+}
+
+interface ScannedFile {
+  path: string
+  filename: string
+  auftraggeber: string | null
+  jahr: number | null
+}
+
+interface ConfigAPI {
+  load: () => Promise<AppConfig>
+  save: (config: AppConfig) => Promise<void>
+  get: () => Promise<AppConfig>
+  setBasePath: (path: string) => Promise<void>
+  getBasePath: () => Promise<string>
+  scanFiles: () => Promise<ScannedFile[]>
+  updateFile: (path: string, updates: Partial<XlsxFileConfig>) => Promise<void>
+  getFiles: () => Promise<XlsxFileConfig[]>
+  getActiveFiles: () => Promise<XlsxFileConfig[]>
+  findFile: (auftraggeber: string, jahr: number) => Promise<XlsxFileConfig | null>
+  toggleFileActive: (path: string, active: boolean) => Promise<void>
+  removeFile: (path: string) => Promise<void>
+}
+
 interface ElectronAPI {
   onStartRecording: (callback: RecordingCallback) => void
   removeStartRecordingListener: (callback: RecordingCallback) => void
   whisper: WhisperAPI
   llm: LLMAPI
   excel: ExcelAPI
+  config: ConfigAPI
 }
 
 declare global {

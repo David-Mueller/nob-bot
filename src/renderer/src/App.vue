@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, toRaw } from 'vue'
 import RecordingWindow from './components/RecordingWindow.vue'
 import ActivityList from './components/ActivityList.vue'
+import DateiManager from './components/DateiManager.vue'
 import { useWhisper } from './composables/useWhisper'
 
 type Activity = {
@@ -34,7 +35,7 @@ type ActivityEntry = {
   saved: boolean
 }
 
-type ViewTab = 'record' | 'list'
+type ViewTab = 'record' | 'list' | 'files'
 
 const showRecording = ref(false)
 const isProcessing = ref(false)
@@ -49,12 +50,15 @@ let entryId = 0
 // Count unsaved entries for badge
 const unsavedCount = computed(() => entries.value.filter(e => !e.saved).length)
 
-// Excel file path
-const excelPath = ref<string | null>(null)
-const excelFileName = computed(() => {
-  if (!excelPath.value) return null
-  return excelPath.value.split('/').pop() || excelPath.value
-})
+// Active Excel files from config
+const activeFileCount = ref(0)
+const activeClients = ref<string[]>([])
+
+const loadActiveFiles = async (): Promise<void> => {
+  const files = await window.api?.config.getActiveFiles() || []
+  activeFileCount.value = files.length
+  activeClients.value = [...new Set(files.map(f => f.auftraggeber))]
+}
 
 // Editing context for voice correction
 const editingContextText = computed(() => {
@@ -123,8 +127,9 @@ const handleRecorded = async (blob: Blob): Promise<void> => {
   try {
     if (isEditing && editingEntry.value) {
       // Correction mode: update existing entry
+      // toRaw() needed to remove Vue proxy for IPC serialization
       const correctedActivity = await window.api?.llm.parseCorrection(
-        editingEntry.value.activity,
+        toRaw(editingEntry.value.activity),
         result.text
       )
       if (correctedActivity) {
@@ -142,7 +147,7 @@ const handleRecorded = async (blob: Blob): Promise<void> => {
       editingEntry.value = null
     } else {
       // New entry mode
-      const activity = await window.api?.llm.parse(result.text, ['IDT', 'LOTUS', 'ORLEN'], [])
+      const activity = await window.api?.llm.parse(result.text)
       if (activity) {
         addMessage({
           type: 'assistant',
@@ -203,11 +208,11 @@ const getLanguageLabel = (lang?: string): string => {
   return lang ? labels[lang.toLowerCase()] || lang : 'Unbekannt'
 }
 
+// Only required fields that block saving
 const getMissingFields = (activity: Activity): string[] => {
   const missing: string[] = []
   if (activity.auftraggeber === null) missing.push('Auftraggeber')
   if (activity.thema === null) missing.push('Thema')
-  if (activity.stunden === null) missing.push('Zeit')
   return missing
 }
 
@@ -215,17 +220,8 @@ const getMissingFields = (activity: Activity): string[] => {
 const handleSaveEntry = async (entry: ActivityEntry): Promise<void> => {
   console.log('Saving entry:', entry)
 
-  // Check if Excel path is set
-  const excelPath = await window.api?.excel.getPath()
-  if (!excelPath) {
-    addMessage({
-      type: 'error',
-      content: 'Kein Excel-Pfad konfiguriert. Bitte in den Einstellungen festlegen.'
-    })
-    return
-  }
-
-  const result = await window.api?.excel.saveActivity(entry.activity)
+  // toRaw() needed to remove Vue proxy for IPC serialization
+  const result = await window.api?.excel.saveActivity(toRaw(entry.activity))
 
   if (result?.success) {
     entry.saved = true
@@ -255,20 +251,10 @@ const handleDeleteEntry = (entry: ActivityEntry): void => {
   }
 }
 
-const selectExcelFile = async (): Promise<void> => {
-  const path = await window.api?.excel.selectFile()
-  if (path) {
-    excelPath.value = path
-  }
-}
-
 onMounted(async () => {
   window.api?.onStartRecording(handleStartRecording)
   initWhisper()
-
-  // Load Excel path
-  const path = await window.api?.excel.getPath()
-  excelPath.value = path || null
+  loadActiveFiles()
 })
 
 onUnmounted(() => {
@@ -286,21 +272,21 @@ onUnmounted(() => {
           <p class="text-xs text-gray-500">Cmd+Shift+R / Strg+Shift+R</p>
         </div>
         <div class="flex items-center gap-3">
-          <!-- Excel File Button -->
+          <!-- Config Status - click to go to Dateien tab -->
           <button
-            @click="selectExcelFile"
+            @click="currentView = 'files'"
             :class="[
               'text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors',
-              excelPath
+              activeFileCount > 0
                 ? 'bg-green-50 text-green-700 hover:bg-green-100'
-                : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                : 'bg-red-50 text-red-700 hover:bg-red-100'
             ]"
-            :title="excelPath || 'Excel-Datei auswählen'"
+            :title="activeFileCount > 0 ? `Aktive Auftraggeber: ${activeClients.join(', ')}` : 'Keine Dateien konfiguriert'"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
             </svg>
-            {{ excelFileName || 'Keine Datei' }}
+            {{ activeFileCount > 0 ? `${activeFileCount} Datei${activeFileCount > 1 ? 'en' : ''}` : 'Keine Dateien' }}
           </button>
 
           <!-- Whisper Status -->
@@ -355,6 +341,17 @@ onUnmounted(() => {
           >
             {{ unsavedCount }}
           </span>
+        </button>
+        <button
+          @click="currentView = 'files'"
+          :class="[
+            'flex-1 py-1.5 px-3 text-sm font-medium rounded-md transition-colors',
+            currentView === 'files'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          ]"
+        >
+          Dateien
         </button>
       </div>
     </header>
@@ -466,13 +463,18 @@ onUnmounted(() => {
     </div>
 
     <!-- List View -->
-    <div v-else class="flex-1 overflow-y-auto p-4">
+    <div v-else-if="currentView === 'list'" class="flex-1 overflow-y-auto p-4">
       <ActivityList
         :entries="entries"
         @save="handleSaveEntry"
         @edit="handleEditEntry"
         @delete="handleDeleteEntry"
       />
+    </div>
+
+    <!-- Files View -->
+    <div v-else-if="currentView === 'files'" class="flex-1 overflow-y-auto">
+      <DateiManager />
     </div>
 
     <!-- Recording Overlay -->

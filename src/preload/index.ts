@@ -25,6 +25,25 @@ interface Activity {
   datum: string | null
 }
 
+interface XlsxFileConfig {
+  path: string
+  auftraggeber: string
+  jahr: number
+  active: boolean
+}
+
+interface AppConfig {
+  xlsxBasePath: string
+  xlsxFiles: XlsxFileConfig[]
+}
+
+interface ScannedFile {
+  path: string
+  filename: string
+  auftraggeber: string | null
+  jahr: number | null
+}
+
 const api = {
   // Recording events
   onStartRecording: (callback: RecordingCallback): void => {
@@ -97,6 +116,46 @@ const api = {
       hotel: number
     }>> => {
       return ipcRenderer.invoke('excel:getActivities', month)
+    }
+  },
+
+  // Config API
+  config: {
+    load: (): Promise<AppConfig> => {
+      return ipcRenderer.invoke('config:load')
+    },
+    save: (config: AppConfig): Promise<void> => {
+      return ipcRenderer.invoke('config:save', config)
+    },
+    get: (): Promise<AppConfig> => {
+      return ipcRenderer.invoke('config:get')
+    },
+    setBasePath: (path: string): Promise<void> => {
+      return ipcRenderer.invoke('config:setBasePath', path)
+    },
+    getBasePath: (): Promise<string> => {
+      return ipcRenderer.invoke('config:getBasePath')
+    },
+    scanFiles: (): Promise<ScannedFile[]> => {
+      return ipcRenderer.invoke('config:scanFiles')
+    },
+    updateFile: (path: string, updates: Partial<XlsxFileConfig>): Promise<void> => {
+      return ipcRenderer.invoke('config:updateFile', path, updates)
+    },
+    getFiles: (): Promise<XlsxFileConfig[]> => {
+      return ipcRenderer.invoke('config:getFiles')
+    },
+    getActiveFiles: (): Promise<XlsxFileConfig[]> => {
+      return ipcRenderer.invoke('config:getActiveFiles')
+    },
+    findFile: (auftraggeber: string, jahr: number): Promise<XlsxFileConfig | null> => {
+      return ipcRenderer.invoke('config:findFile', auftraggeber, jahr)
+    },
+    toggleFileActive: (path: string, active: boolean): Promise<void> => {
+      return ipcRenderer.invoke('config:toggleFileActive', path, active)
+    },
+    removeFile: (path: string): Promise<void> => {
+      return ipcRenderer.invoke('config:removeFile', path)
     }
   }
 }

@@ -1,17 +1,33 @@
 import { ipcMain, dialog } from 'electron'
 import { addActivity, getActivities, type Activity as ExcelActivity } from '../services/excel'
 import type { Activity as LLMActivity } from '../services/llm'
+import { findFileForAuftraggeber, getActiveFiles } from '../services/config'
 
-// Excel file path - from env or user selection
-let excelFilePath: string | null = process.env.EXCEL_FILE_PATH || null
+// Legacy: single file path (for backwards compatibility)
+let legacyFilePath: string | null = process.env.EXCEL_FILE_PATH || null
 
 export function setExcelFilePath(path: string): void {
-  excelFilePath = path
-  console.log(`[Excel] File path set: ${path}`)
+  legacyFilePath = path
+  console.log(`[Excel] Legacy file path set: ${path}`)
 }
 
-if (excelFilePath) {
-  console.log(`[Excel] Using path from env: ${excelFilePath}`)
+if (legacyFilePath) {
+  console.log(`[Excel] Using legacy path from env: ${legacyFilePath}`)
+}
+
+// Extract year from datum string (YYYY-MM-DD or DD.MM.YYYY format)
+function extractYear(datum: string | null): number {
+  if (!datum) return new Date().getFullYear()
+
+  // Try YYYY-MM-DD format
+  const isoMatch = datum.match(/^(\d{4})-/)
+  if (isoMatch) return parseInt(isoMatch[1], 10)
+
+  // Try DD.MM.YYYY format
+  const deMatch = datum.match(/\.(\d{4})$/)
+  if (deMatch) return parseInt(deMatch[1], 10)
+
+  return new Date().getFullYear()
 }
 
 // Map LLM activity to Excel activity format
@@ -37,9 +53,9 @@ export function registerExcelHandlers(): void {
     setExcelFilePath(path)
   })
 
-  // Get current file path
+  // Get current file path (legacy)
   ipcMain.handle('excel:getPath', (): string | null => {
-    return excelFilePath
+    return legacyFilePath
   })
 
   // Open file picker to select Excel file
@@ -63,13 +79,42 @@ export function registerExcelHandlers(): void {
   ipcMain.handle(
     'excel:saveActivity',
     async (_event, activity: LLMActivity): Promise<{ success: boolean; error?: string }> => {
-      if (!excelFilePath) {
-        return { success: false, error: 'Kein Excel-Pfad konfiguriert' }
+      // Try to find file via Auftraggeber+Jahr from config
+      let filePath: string | null = null
+
+      if (activity.auftraggeber) {
+        const jahr = extractYear(activity.datum)
+        const configFile = findFileForAuftraggeber(activity.auftraggeber, jahr)
+
+        if (configFile) {
+          filePath = configFile.path
+          console.log(`[Excel] Found config file for ${activity.auftraggeber}/${jahr}: ${filePath}`)
+        } else {
+          console.log(`[Excel] No config file for ${activity.auftraggeber}/${jahr}`)
+        }
+      }
+
+      // Fallback to legacy path
+      if (!filePath && legacyFilePath) {
+        filePath = legacyFilePath
+        console.log(`[Excel] Using legacy file path: ${filePath}`)
+      }
+
+      if (!filePath) {
+        // Check if any active files exist
+        const activeFiles = getActiveFiles()
+        if (activeFiles.length === 0) {
+          return { success: false, error: 'Keine aktiven Excel-Dateien konfiguriert. Bitte unter "Dateien" konfigurieren.' }
+        }
+        return {
+          success: false,
+          error: `Keine Datei für Auftraggeber "${activity.auftraggeber || 'unbekannt'}" gefunden. Verfügbar: ${activeFiles.map(f => f.auftraggeber).join(', ')}`
+        }
       }
 
       try {
         const excelActivity = mapToExcelActivity(activity)
-        await addActivity(excelFilePath, excelActivity)
+        await addActivity(filePath, excelActivity)
         return { success: true }
       } catch (err) {
         console.error('[Excel] Save failed:', err)
@@ -81,16 +126,16 @@ export function registerExcelHandlers(): void {
     }
   )
 
-  // Get activities for a month
+  // Get activities for a month (legacy - uses single file)
   ipcMain.handle(
     'excel:getActivities',
     async (_event, month: number): Promise<Array<ExcelActivity & { row: number }>> => {
-      if (!excelFilePath) {
+      if (!legacyFilePath) {
         return []
       }
 
       try {
-        return await getActivities(excelFilePath, month)
+        return await getActivities(legacyFilePath, month)
       } catch (err) {
         console.error('[Excel] Read failed:', err)
         return []

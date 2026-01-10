@@ -7,6 +7,8 @@ import { registerHotkeys, unregisterHotkeys } from './hotkey'
 import { registerWhisperHandlers } from './ipc/whisperHandlers'
 import { registerLLMHandlers } from './ipc/llmHandlers'
 import { registerExcelHandlers } from './ipc/excelHandlers'
+import { registerConfigHandlers } from './ipc/configHandlers'
+import { loadConfig } from './services/config'
 
 // Load .env early
 config()
@@ -51,12 +53,15 @@ function createWindow(): BrowserWindow {
   return mainWindow
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.aktivitaeten.app')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  // Load config FIRST (before window and handlers)
+  await loadConfig()
 
   const window = createWindow()
 
@@ -70,6 +75,7 @@ app.whenReady().then(() => {
   registerWhisperHandlers(window)
   registerLLMHandlers()
   registerExcelHandlers()
+  registerConfigHandlers()
 
   // In dev mode, show window immediately for testing
   if (is.dev) {

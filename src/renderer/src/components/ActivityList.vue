@@ -43,17 +43,36 @@ const formatDate = (date: Date): string => {
   })
 }
 
+// Format YYYY-MM-DD to German date format
+const formatActivityDate = (datum: string): string => {
+  const date = new Date(datum)
+  return date.toLocaleDateString('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  })
+}
+
 const getStatusColor = (entry: ActivityEntry): string => {
   if (entry.saved) return 'bg-green-100 border-green-300'
-  const missing = getMissingFields(entry.activity)
-  if (missing.length > 0) return 'bg-yellow-50 border-yellow-300'
+  const requiredMissing = getRequiredMissing(entry.activity)
+  if (requiredMissing.length > 0) return 'bg-red-50 border-red-300'
+  const optionalMissing = getOptionalMissing(entry.activity)
+  if (optionalMissing.length > 0) return 'bg-yellow-50 border-yellow-300'
   return 'bg-white border-gray-200'
 }
 
-const getMissingFields = (activity: Activity): string[] => {
+// Required fields that block saving
+const getRequiredMissing = (activity: Activity): string[] => {
   const missing: string[] = []
   if (activity.auftraggeber === null) missing.push('Auftraggeber')
   if (activity.thema === null) missing.push('Thema')
+  return missing
+}
+
+// Optional fields that are missing (for warning display only)
+const getOptionalMissing = (activity: Activity): string[] => {
+  const missing: string[] = []
   if (activity.stunden === null) missing.push('Zeit')
   return missing
 }
@@ -92,7 +111,13 @@ const getMissingFields = (activity: Activity): string[] => {
               Gespeichert
             </span>
             <span
-              v-else-if="getMissingFields(entry.activity).length > 0"
+              v-else-if="getRequiredMissing(entry.activity).length > 0"
+              class="text-xs bg-red-500 text-white px-2 py-0.5 rounded"
+            >
+              Pflichtfelder fehlen
+            </span>
+            <span
+              v-else-if="getOptionalMissing(entry.activity).length > 0"
               class="text-xs bg-yellow-500 text-white px-2 py-0.5 rounded"
             >
               Unvollständig
@@ -126,6 +151,9 @@ const getMissingFields = (activity: Activity): string[] => {
           </div>
 
           <div class="flex gap-4 text-gray-600">
+            <span v-if="entry.activity.datum">
+              <span class="text-gray-500">Datum:</span> {{ formatActivityDate(entry.activity.datum) }}
+            </span>
             <span v-if="entry.activity.stunden !== null">
               <span class="text-gray-500">Zeit:</span> {{ entry.activity.stunden }}h
             </span>
@@ -138,12 +166,20 @@ const getMissingFields = (activity: Activity): string[] => {
           </div>
         </div>
 
-        <!-- Missing Fields Warning -->
+        <!-- Required Fields Warning -->
         <div
-          v-if="getMissingFields(entry.activity).length > 0"
+          v-if="getRequiredMissing(entry.activity).length > 0"
+          class="mt-2 text-xs text-red-700"
+        >
+          ❌ Pflichtfelder: {{ getRequiredMissing(entry.activity).join(', ') }}
+        </div>
+
+        <!-- Optional Fields Info -->
+        <div
+          v-else-if="getOptionalMissing(entry.activity).length > 0"
           class="mt-2 text-xs text-yellow-700"
         >
-          ⚠️ Fehlend: {{ getMissingFields(entry.activity).join(', ') }}
+          ⚠️ Optional: {{ getOptionalMissing(entry.activity).join(', ') }}
         </div>
 
         <!-- Transcript Preview -->
@@ -156,7 +192,7 @@ const getMissingFields = (activity: Activity): string[] => {
           <button
             v-if="!entry.saved"
             @click="emit('save', entry)"
-            :disabled="getMissingFields(entry.activity).length > 0"
+            :disabled="getRequiredMissing(entry.activity).length > 0"
             class="text-xs px-3 py-1.5 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded transition-colors"
           >
             Speichern
