@@ -71,6 +71,33 @@ const api = {
     isReady: (): Promise<boolean> => {
       return ipcRenderer.invoke('llm:isReady')
     }
+  },
+
+  // Excel API
+  excel: {
+    setPath: (path: string): Promise<void> => {
+      return ipcRenderer.invoke('excel:setPath', path)
+    },
+    getPath: (): Promise<string | null> => {
+      return ipcRenderer.invoke('excel:getPath')
+    },
+    selectFile: (): Promise<string | null> => {
+      return ipcRenderer.invoke('excel:selectFile')
+    },
+    saveActivity: (activity: Activity): Promise<{ success: boolean; error?: string }> => {
+      return ipcRenderer.invoke('excel:saveActivity', activity)
+    },
+    getActivities: (month: number): Promise<Array<{
+      row: number
+      datum: string
+      thema: string
+      taetigkeit: string
+      zeit: number | null
+      km: number
+      hotel: number
+    }>> => {
+      return ipcRenderer.invoke('excel:getActivities', month)
+    }
   }
 }
 

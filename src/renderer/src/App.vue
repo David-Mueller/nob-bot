@@ -49,6 +49,13 @@ let entryId = 0
 // Count unsaved entries for badge
 const unsavedCount = computed(() => entries.value.filter(e => !e.saved).length)
 
+// Excel file path
+const excelPath = ref<string | null>(null)
+const excelFileName = computed(() => {
+  if (!excelPath.value) return null
+  return excelPath.value.split('/').pop() || excelPath.value
+})
+
 // Editing context for voice correction
 const editingContextText = computed(() => {
   if (!editingEntry.value) return undefined
@@ -206,13 +213,32 @@ const getMissingFields = (activity: Activity): string[] => {
 
 // Entry list handlers
 const handleSaveEntry = async (entry: ActivityEntry): Promise<void> => {
-  // TODO: Save to Excel via IPC
   console.log('Saving entry:', entry)
-  entry.saved = true
-  addMessage({
-    type: 'assistant',
-    content: `✅ Aktivität "${entry.activity.beschreibung}" wurde gespeichert.`
-  })
+
+  // Check if Excel path is set
+  const excelPath = await window.api?.excel.getPath()
+  if (!excelPath) {
+    addMessage({
+      type: 'error',
+      content: 'Kein Excel-Pfad konfiguriert. Bitte in den Einstellungen festlegen.'
+    })
+    return
+  }
+
+  const result = await window.api?.excel.saveActivity(entry.activity)
+
+  if (result?.success) {
+    entry.saved = true
+    addMessage({
+      type: 'assistant',
+      content: `✅ Aktivität "${entry.activity.beschreibung}" wurde gespeichert.`
+    })
+  } else {
+    addMessage({
+      type: 'error',
+      content: `Speichern fehlgeschlagen: ${result?.error || 'Unbekannter Fehler'}`
+    })
+  }
 }
 
 const handleEditEntry = (entry: ActivityEntry): void => {
@@ -229,9 +255,20 @@ const handleDeleteEntry = (entry: ActivityEntry): void => {
   }
 }
 
-onMounted(() => {
+const selectExcelFile = async (): Promise<void> => {
+  const path = await window.api?.excel.selectFile()
+  if (path) {
+    excelPath.value = path
+  }
+}
+
+onMounted(async () => {
   window.api?.onStartRecording(handleStartRecording)
   initWhisper()
+
+  // Load Excel path
+  const path = await window.api?.excel.getPath()
+  excelPath.value = path || null
 })
 
 onUnmounted(() => {
@@ -248,25 +285,43 @@ onUnmounted(() => {
           <h1 class="text-lg font-semibold text-gray-800">Aktivitäten</h1>
           <p class="text-xs text-gray-500">Cmd+Shift+R / Strg+Shift+R</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-3">
+          <!-- Excel File Button -->
+          <button
+            @click="selectExcelFile"
+            :class="[
+              'text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors',
+              excelPath
+                ? 'bg-green-50 text-green-700 hover:bg-green-100'
+                : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+            ]"
+            :title="excelPath || 'Excel-Datei auswählen'"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            {{ excelFileName || 'Keine Datei' }}
+          </button>
+
+          <!-- Whisper Status -->
           <span
             v-if="whisperStatus === 'loading'"
             class="text-xs text-blue-600 flex items-center gap-1"
           >
             <span class="w-2 h-2 border border-blue-500 border-t-transparent rounded-full animate-spin" />
-            Whisper {{ loadingProgress }}%
+            {{ loadingProgress }}%
           </span>
           <span
             v-else-if="whisperStatus === 'ready'"
             class="text-xs text-green-600"
           >
-            Bereit
+            ✓
           </span>
           <span
             v-else-if="whisperError"
             class="text-xs text-red-600"
           >
-            Fehler
+            ✗
           </span>
         </div>
       </div>

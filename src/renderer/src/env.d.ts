@@ -50,11 +50,30 @@ interface LLMAPI {
   isReady: () => Promise<boolean>
 }
 
+interface ExcelActivity {
+  row: number
+  datum: string
+  thema: string
+  taetigkeit: string
+  zeit: number | null
+  km: number
+  hotel: number
+}
+
+interface ExcelAPI {
+  setPath: (path: string) => Promise<void>
+  getPath: () => Promise<string | null>
+  selectFile: () => Promise<string | null>
+  saveActivity: (activity: Activity) => Promise<{ success: boolean; error?: string }>
+  getActivities: (month: number) => Promise<ExcelActivity[]>
+}
+
 interface ElectronAPI {
   onStartRecording: (callback: RecordingCallback) => void
   removeStartRecordingListener: (callback: RecordingCallback) => void
   whisper: WhisperAPI
   llm: LLMAPI
+  excel: ExcelAPI
 }
 
 declare global {

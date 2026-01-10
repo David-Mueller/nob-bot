@@ -6,6 +6,7 @@ import { createTray, destroyTray } from './tray'
 import { registerHotkeys, unregisterHotkeys } from './hotkey'
 import { registerWhisperHandlers } from './ipc/whisperHandlers'
 import { registerLLMHandlers } from './ipc/llmHandlers'
+import { registerExcelHandlers } from './ipc/excelHandlers'
 
 // Load .env early
 config()
@@ -68,6 +69,7 @@ app.whenReady().then(() => {
   // Register IPC handlers
   registerWhisperHandlers(window)
   registerLLMHandlers()
+  registerExcelHandlers()
 
   // In dev mode, show window immediately for testing
   if (is.dev) {
