@@ -26,9 +26,6 @@
 
 ## Backlog
 
-- [ ] FEAT-010: Mac Packaging (.dmg)
-- [ ] FEAT-013: Offline-Queue (Sync bei Verbindung)
-
 ---
 
 ## Feature Details
@@ -44,10 +41,8 @@
 | FEAT-006 | Excel Service | - | ✅ Done |
 | FEAT-007 | Settings Management | [Spec](specs/FEAT-007.md) | ✅ Done |
 | FEAT-008 | Entry List UI + Voice-Korrektur | - | ✅ Done |
-| FEAT-010 | Mac Packaging | - | 📋 Backlog |
 | FEAT-011 | Glossar-Sheet | [Spec](specs/FEAT-011-glossar.md) | ✅ Done |
 | FEAT-012 | XLSX Backups | [Spec](specs/FEAT-012-xlsx-backup.md) | ✅ Done |
-| FEAT-013 | Offline-Queue | [Spec](specs/FEAT-013-offline-queue.md) | 📋 Backlog |
 | FEAT-014 | Rückfragen (Follow-up) | [Spec](specs/FEAT-014-followup-questions.md) | ✅ Done |
 | FEAT-015 | TTS Voice Rückfragen | [Spec](specs/FEAT-015-tts-voice-questions.md) | ✅ Done |
 | FEAT-016 | Auftraggeber-XLSX-Mapping | [Spec](specs/FEAT-016-auftraggeber-xlsx-mapping.md) | ✅ Done |

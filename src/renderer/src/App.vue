@@ -564,7 +564,7 @@ onUnmounted(() => {
     <header class="bg-white border-b px-4 py-3">
       <div class="flex items-center justify-between mb-3">
         <div>
-          <h1 class="text-lg font-semibold text-gray-800">Aktivitäten</h1>
+          <h1 class="text-lg font-semibold text-gray-800">NoB-Con Aktivitäten</h1>
           <p class="text-xs text-gray-500">Cmd+Shift+R / Strg+Shift+R</p>
         </div>
         <div class="flex items-center gap-3">

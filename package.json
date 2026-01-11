@@ -1,9 +1,9 @@
 {
   "name": "aktivitaeten",
   "version": "1.0.0",
-  "description": "Aktivitäten-Tracker mit Spracheingabe",
+  "description": "NoB-Con Aktivitäten - Spracheingabe für Arbeitszeiten",
   "main": "./out/main/index.js",
-  "author": "",
+  "author": "noboehme@nob-con.de",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
@@ -40,8 +40,8 @@
     "vue-tsc": "^2.2.0"
   },
   "build": {
-    "appId": "com.aktivitaeten.app",
-    "productName": "Aktivitäten",
+    "appId": "com.nobcon.app",
+    "productName": "NoB-Con Aktivitäten",
     "mac": {
       "target": [
         "dmg"
@@ -65,8 +65,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Aktivitäten",
-      "uninstallDisplayName": "Aktivitäten",
+      "shortcutName": "NoB-Con Aktivitäten",
+      "uninstallDisplayName": "NoB-Con Aktivitäten",
       "installerLanguages": [
         "de",
         "en"

@@ -1,5 +1,5 @@
 import { config } from 'dotenv';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, shell, nativeImage } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { registerHotkeys, unregisterHotkeys } from './hotkey';
@@ -18,12 +18,18 @@ config();
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): BrowserWindow {
+  // Icon path: dev = app root, prod = resources folder
+  const iconPath = is.dev
+    ? join(app.getAppPath(), 'resources', 'icon.png')
+    : join(process.resourcesPath, 'resources', 'icon.png');
+
   mainWindow = new BrowserWindow({
     width: 720,
     height: 650,
     show: true,
     autoHideMenuBar: true,
     resizable: true,
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -47,7 +53,19 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('com.aktivitaeten.app');
+  electronApp.setAppUserModelId('com.nobcon.app');
+  app.setName('NoB-Con Aktivitäten');
+
+  // Set dock icon on macOS (especially for dev mode)
+  if (process.platform === 'darwin' && app.dock) {
+    const iconPath = is.dev
+      ? join(app.getAppPath(), 'resources', 'icon.png')
+      : join(process.resourcesPath, 'resources', 'icon.png');
+    const icon = nativeImage.createFromPath(iconPath);
+    if (!icon.isEmpty()) {
+      app.dock.setIcon(icon);
+    }
+  }
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window);
