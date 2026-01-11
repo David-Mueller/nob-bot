@@ -4,8 +4,9 @@ import { join } from 'path'
 import OpenAI from 'openai'
 import { config } from 'dotenv'
 import { Readable } from 'stream'
+import { getApiKey } from './config'
 
-// Load .env
+// Load .env (fallback for API key)
 config({ path: join(app.getAppPath(), '.env') })
 
 // Configure cache directory for local models
@@ -43,7 +44,7 @@ export type ProgressCallback = (progress: {
 function initOpenAI(): OpenAI | null {
   if (openaiClient) return openaiClient
 
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = getApiKey()
   if (!apiKey) {
     console.log('[Whisper] No OpenAI API key - cloud mode unavailable')
     return null
@@ -101,14 +102,29 @@ async function transcribeCloud(audioBuffer: ArrayBuffer): Promise<TranscriptionR
 
   console.log(`[Whisper Cloud] Uploading ${(buffer.length / 1024).toFixed(1)} KB`)
 
-  const response = await client.audio.transcriptions.create({
+  // First try with auto-detect
+  let response = await client.audio.transcriptions.create({
     file: file,
     model: 'whisper-1',
-    response_format: 'verbose_json',
-    // Don't specify language - let it auto-detect for multilingual content
+    response_format: 'verbose_json'
   })
 
   console.log(`[Whisper Cloud] Detected language: ${response.language}`)
+
+  // If not German or Polish, re-transcribe with German forced
+  const allowedLanguages = ['german', 'polish', 'de', 'pl']
+  if (response.language && !allowedLanguages.includes(response.language.toLowerCase())) {
+    console.log(`[Whisper Cloud] Re-transcribing with forced German (was: ${response.language})`)
+
+    // Need to create a new File object for the retry
+    const retryFile = new File([buffer], 'audio.webm', { type: 'audio/webm' })
+    response = await client.audio.transcriptions.create({
+      file: retryFile,
+      model: 'whisper-1',
+      response_format: 'verbose_json',
+      language: 'de'
+    })
+  }
 
   return {
     text: response.text,
@@ -149,7 +165,9 @@ async function transcribeLocal(
 
   const options: Record<string, unknown> = {
     task: 'transcribe',
-    return_timestamps: false
+    return_timestamps: false,
+    // Force German to avoid misdetection on short phrases
+    language: 'german'
   }
 
   const result = await localTranscriber(float32Audio, options)

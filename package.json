@@ -56,11 +56,17 @@
       "target": [
         "nsis"
       ],
-      "icon": "resources/icon.ico"
+      "icon": "resources/icon.png"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Aktivitäten",
+      "uninstallDisplayName": "Aktivitäten",
+      "installerLanguages": ["de", "en"],
+      "language": 1031
     },
     "files": [
       "out/**/*",

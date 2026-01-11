@@ -7,8 +7,11 @@ import {
   removeXlsxFile,
   getActiveFiles,
   findFileForAuftraggeber,
+  getSettings,
+  updateSettings,
   type AppConfig,
-  type XlsxFileConfig
+  type XlsxFileConfig,
+  type AppSettings
 } from '../services/config'
 import { scanDirectory, type ScannedFile } from '../services/fileScanner'
 
@@ -89,6 +92,19 @@ export function registerConfigHandlers(): void {
     'config:removeFile',
     async (_event, path: string): Promise<void> => {
       await removeXlsxFile(path)
+    }
+  )
+
+  // Get settings
+  ipcMain.handle('config:getSettings', (): AppSettings => {
+    return getSettings()
+  })
+
+  // Update settings
+  ipcMain.handle(
+    'config:updateSettings',
+    async (_event, updates: Partial<AppSettings>): Promise<AppSettings> => {
+      return await updateSettings(updates)
     }
   )
 }

@@ -97,12 +97,13 @@ WICHTIG: Verwende EXAKT die angegebenen Schreibweisen!
 
 ## Akzeptanzkriterien
 
-- [ ] Glossar-Sheet wird aus Excel gelesen
-- [ ] LLM nutzt Glossar-Begriffe für Normalisierung
-- [ ] "lotus" wird zu "LOTUS" korrigiert
-- [ ] "Kschischthoff" wird zu "Krzysztof" korrigiert
-- [ ] UI zeigt angewendete Korrekturen an
-- [ ] Neue Begriffe können hinzugefügt werden
+- [x] Glossar-Sheet wird aus Excel gelesen
+- [x] LLM nutzt Glossar-Begriffe für Normalisierung
+- [x] "lotus" wird zu "LOTUS" korrigiert
+- [x] "Kschischthoff" wird zu "Krzysztof" korrigiert
+- [x] Glossar-Sheet wird automatisch erstellt wenn nicht vorhanden
+- [ ] UI zeigt angewendete Korrekturen an (future)
+- [ ] Neue Begriffe können hinzugefügt werden (future)
 
 ## Priorität
 

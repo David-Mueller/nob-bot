@@ -5,7 +5,7 @@ type Activity = {
   auftraggeber: string | null
   thema: string | null
   beschreibung: string
-  stunden: number | null
+  minuten: number | null
   km: number
   auslagen: number
   datum: string | null
@@ -17,6 +17,7 @@ type ActivityEntry = {
   transcript: string
   timestamp: Date
   saved: boolean
+  savedFilePath?: string
 }
 
 const props = defineProps<{
@@ -27,6 +28,7 @@ const emit = defineEmits<{
   (e: 'save', entry: ActivityEntry): void
   (e: 'edit', entry: ActivityEntry): void
   (e: 'delete', entry: ActivityEntry): void
+  (e: 'openFile', filePath: string): void
 }>()
 
 const sortedEntries = computed(() => {
@@ -73,8 +75,21 @@ const getRequiredMissing = (activity: Activity): string[] => {
 // Optional fields that are missing (for warning display only)
 const getOptionalMissing = (activity: Activity): string[] => {
   const missing: string[] = []
-  if (activity.stunden === null) missing.push('Zeit')
+  if (activity.minuten === null) missing.push('Zeit')
   return missing
+}
+
+// Format minutes to readable format
+const formatTime = (minutes: number): string => {
+  if (minutes < 60) {
+    return `${minutes} min`
+  }
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (m === 0) {
+    return `${h}h`
+  }
+  return `${h}h ${m}min`
 }
 </script>
 
@@ -154,8 +169,8 @@ const getOptionalMissing = (activity: Activity): string[] => {
             <span v-if="entry.activity.datum">
               <span class="text-gray-500">Datum:</span> {{ formatActivityDate(entry.activity.datum) }}
             </span>
-            <span v-if="entry.activity.stunden !== null">
-              <span class="text-gray-500">Zeit:</span> {{ entry.activity.stunden }}h
+            <span v-if="entry.activity.minuten !== null">
+              <span class="text-gray-500">Zeit:</span> {{ formatTime(entry.activity.minuten) }}
             </span>
             <span v-if="entry.activity.km && entry.activity.km > 0">
               <span class="text-gray-500">KM:</span> {{ entry.activity.km }}
@@ -198,6 +213,17 @@ const getOptionalMissing = (activity: Activity): string[] => {
             Speichern
           </button>
           <button
+            v-if="entry.saved && entry.savedFilePath"
+            @click="emit('openFile', entry.savedFilePath!)"
+            class="text-xs px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors flex items-center gap-1"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+            </svg>
+            Excel öffnen
+          </button>
+          <button
+            v-if="!entry.saved"
             @click="emit('edit', entry)"
             class="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
           >

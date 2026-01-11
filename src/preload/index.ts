@@ -19,7 +19,7 @@ interface Activity {
   auftraggeber: string | null
   thema: string | null
   beschreibung: string
-  stunden: number | null
+  minuten: number | null
   km: number
   auslagen: number
   datum: string | null
@@ -32,9 +32,18 @@ interface XlsxFileConfig {
   active: boolean
 }
 
+interface AppSettings {
+  hotkey: string
+  openaiApiKey: string
+  whisperModel: 'tiny' | 'base' | 'small'
+  ttsEnabled: boolean
+  ttsVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+}
+
 interface AppConfig {
   xlsxBasePath: string
   xlsxFiles: XlsxFileConfig[]
+  settings: AppSettings
 }
 
 interface ScannedFile {
@@ -87,6 +96,14 @@ const api = {
     parseCorrection: (existingActivity: Activity, correctionTranscript: string): Promise<Activity> => {
       return ipcRenderer.invoke('llm:parseCorrection', existingActivity, correctionTranscript)
     },
+    parseFollowUp: (
+      existingActivity: Activity,
+      userAnswer: string,
+      missingFields: string[],
+      question: string
+    ): Promise<Activity> => {
+      return ipcRenderer.invoke('llm:parseFollowUp', existingActivity, userAnswer, missingFields, question)
+    },
     isReady: (): Promise<boolean> => {
       return ipcRenderer.invoke('llm:isReady')
     }
@@ -103,8 +120,11 @@ const api = {
     selectFile: (): Promise<string | null> => {
       return ipcRenderer.invoke('excel:selectFile')
     },
-    saveActivity: (activity: Activity): Promise<{ success: boolean; error?: string }> => {
+    saveActivity: (activity: Activity): Promise<{ success: boolean; error?: string; filePath?: string }> => {
       return ipcRenderer.invoke('excel:saveActivity', activity)
+    },
+    openFile: (filePath: string): Promise<boolean> => {
+      return ipcRenderer.invoke('excel:openFile', filePath)
     },
     getActivities: (month: number): Promise<Array<{
       row: number
@@ -156,6 +176,93 @@ const api = {
     },
     removeFile: (path: string): Promise<void> => {
       return ipcRenderer.invoke('config:removeFile', path)
+    },
+    getSettings: (): Promise<AppSettings> => {
+      return ipcRenderer.invoke('config:getSettings')
+    },
+    updateSettings: (updates: Partial<AppSettings>): Promise<AppSettings> => {
+      return ipcRenderer.invoke('config:updateSettings', updates)
+    }
+  },
+
+  // TTS API
+  tts: {
+    speak: (text: string, voice?: string): Promise<Uint8Array> => {
+      return ipcRenderer.invoke('tts:speak', text, voice)
+    },
+    isReady: (): Promise<boolean> => {
+      return ipcRenderer.invoke('tts:isReady')
+    }
+  },
+
+  // Glossar API
+  glossar: {
+    load: (): Promise<boolean> => {
+      return ipcRenderer.invoke('glossar:load')
+    },
+    getKnownTerms: (): Promise<{
+      auftraggeber: string[]
+      themen: string[]
+      kunden: string[]
+    } | null> => {
+      return ipcRenderer.invoke('glossar:getKnownTerms')
+    },
+    normalize: (text: string): Promise<string> => {
+      return ipcRenderer.invoke('glossar:normalize', text)
+    },
+    getEntries: (): Promise<Array<{
+      kategorie: string
+      begriff: string
+      synonyme: string[]
+    }>> => {
+      return ipcRenderer.invoke('glossar:getEntries')
+    },
+    clearCache: (): Promise<void> => {
+      return ipcRenderer.invoke('glossar:clearCache')
+    },
+    createFromData: (filePath: string, auftraggeber: string): Promise<boolean> => {
+      return ipcRenderer.invoke('glossar:createFromData', filePath, auftraggeber)
+    }
+  },
+
+  // Drafts API
+  drafts: {
+    load: (): Promise<Array<{
+      id: number
+      activity: {
+        auftraggeber: string | null
+        thema: string | null
+        beschreibung: string
+        minuten: number | null
+        km: number
+        auslagen: number
+        datum: string | null
+      }
+      transcript: string
+      timestamp: string
+      saved: boolean
+    }>> => {
+      return ipcRenderer.invoke('drafts:load')
+    },
+    save: (drafts: Array<{
+      id: number
+      activity: {
+        auftraggeber: string | null
+        thema: string | null
+        beschreibung: string
+        minuten: number | null
+        km: number
+        auslagen: number
+        datum: string | null
+      }
+      transcript: string
+      timestamp: string
+      saved: boolean
+    }>): Promise<void> => {
+      return ipcRenderer.invoke('drafts:save', drafts)
+    },
+    clear: (): Promise<void> => {
+      return ipcRenderer.invoke('drafts:clear')
     }
   }
 }

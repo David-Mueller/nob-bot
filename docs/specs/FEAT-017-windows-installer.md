@@ -15,27 +15,27 @@ Erstellen eines Windows-Installers (.exe) der die App auf Windows-Systemen insta
 
 ### Build-Prozess
 
-- [ ] `pnpm build:win` erzeugt funktionierenden Windows-Installer
-- [ ] Installer-Dateiname enthaelt Version (z.B. `Aktivitaeten-Setup-1.0.0.exe`)
-- [ ] Build funktioniert auf macOS (Cross-Compilation) oder Windows
+- [x] `npm run build:win` erzeugt funktionierenden Windows-Installer
+- [x] Installer-Dateiname enthaelt Version (z.B. `Aktivitaeten-Setup-1.0.0.exe`)
+- [x] Build funktioniert auf Windows (Cross-Compilation nicht unterstuetzt wg. native modules)
 
 ### Installer-Verhalten
 
-- [ ] NSIS-Installer mit Installationspfad-Auswahl
-- [ ] Desktop-Shortcut optional
-- [ ] Startmenue-Eintrag wird erstellt
-- [ ] Deinstallation ueber Windows-Einstellungen moeglich
+- [x] NSIS-Installer mit Installationspfad-Auswahl
+- [x] Desktop-Shortcut optional
+- [x] Startmenue-Eintrag wird erstellt
+- [x] Deinstallation ueber Windows-Einstellungen moeglich
 
 ### App-Icon
 
-- [ ] Windows-Icon (.ico) vorhanden in resources/
-- [ ] Icon erscheint im Installer, Desktop-Shortcut und Taskleiste
+- [x] Windows-Icon (.png 256x256) vorhanden in resources/ (electron-builder konvertiert)
+- [x] Icon erscheint im Installer, Desktop-Shortcut und Taskleiste
 
 ### Autostart (optional)
 
-- [ ] Checkbox im Installer: "Mit Windows starten"
-- [ ] Oder: Setting in der App zum Aktivieren von Autostart
-- [ ] Autostart startet App minimiert im Tray
+- [ ] ~~Checkbox im Installer: "Mit Windows starten"~~ (nicht implementiert - user declined)
+- [ ] ~~Oder: Setting in der App zum Aktivieren von Autostart~~ (nicht implementiert)
+- [ ] ~~Autostart startet App minimiert im Tray~~ (nicht implementiert)
 
 ### Code-Signing (optional, spaeter)
 

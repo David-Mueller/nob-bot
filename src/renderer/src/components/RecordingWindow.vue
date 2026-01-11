@@ -84,7 +84,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="recording-window p-6 bg-white rounded-lg shadow-lg max-w-md mx-auto">
+  <div class="recording-overlay fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="recording-window p-6 bg-white rounded-xl shadow-2xl w-80">
     <!-- Editing Context Banner -->
     <div
       v-if="props.editingContext"
@@ -193,6 +194,7 @@ onUnmounted(() => {
       <span v-else>
         Strg+Shift+A für Schnellaufnahme
       </span>
+    </div>
     </div>
   </div>
 </template>

@@ -15,16 +15,35 @@ export type XlsxFileConfig = {
   active: boolean
 }
 
+export type AppSettings = {
+  hotkey: string
+  openaiApiKey: string
+  whisperModel: 'tiny' | 'base' | 'small'
+  ttsEnabled: boolean
+  ttsVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+}
+
 export type AppConfig = {
   // Base path pattern for scanning XLSX files
   xlsxBasePath: string
   // List of known XLSX files with their status
   xlsxFiles: XlsxFileConfig[]
+  // App settings
+  settings: AppSettings
+}
+
+const DEFAULT_SETTINGS: AppSettings = {
+  hotkey: 'CommandOrControl+Shift+R',
+  openaiApiKey: '',
+  whisperModel: 'base',
+  ttsEnabled: false,
+  ttsVoice: 'nova'
 }
 
 const DEFAULT_CONFIG: AppConfig = {
   xlsxBasePath: 'D:\\C-Con\\AL-kas',
-  xlsxFiles: []
+  xlsxFiles: [],
+  settings: { ...DEFAULT_SETTINGS }
 }
 
 let currentConfig: AppConfig = { ...DEFAULT_CONFIG }
@@ -41,7 +60,11 @@ export async function loadConfig(): Promise<AppConfig> {
 
     currentConfig = {
       xlsxBasePath: parsed.xlsxBasePath || DEFAULT_CONFIG.xlsxBasePath,
-      xlsxFiles: parsed.xlsxFiles || []
+      xlsxFiles: parsed.xlsxFiles || [],
+      settings: {
+        ...DEFAULT_SETTINGS,
+        ...parsed.settings
+      }
     }
 
     console.log(`[Config] Loaded from ${CONFIG_FILE}`)
@@ -118,4 +141,24 @@ export function findFileForAuftraggeber(
     f.jahr === jahr &&
     f.auftraggeber.toLowerCase().trim() === normalized
   ) || null
+}
+
+// Settings functions
+export function getSettings(): AppSettings {
+  return currentConfig.settings
+}
+
+export async function updateSettings(updates: Partial<AppSettings>): Promise<AppSettings> {
+  currentConfig.settings = {
+    ...currentConfig.settings,
+    ...updates
+  }
+  await saveConfig(currentConfig)
+  console.log('[Config] Settings updated')
+  return currentConfig.settings
+}
+
+export function getApiKey(): string {
+  // First check settings, then fall back to environment variable
+  return currentConfig.settings.openaiApiKey || process.env.OPENAI_API_KEY || ''
 }

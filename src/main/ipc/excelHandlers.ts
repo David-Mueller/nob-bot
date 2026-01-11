@@ -1,4 +1,4 @@
-import { ipcMain, dialog } from 'electron'
+import { ipcMain, dialog, shell } from 'electron'
 import { addActivity, getActivities, type Activity as ExcelActivity } from '../services/excel'
 import type { Activity as LLMActivity } from '../services/llm'
 import { findFileForAuftraggeber, getActiveFiles } from '../services/config'
@@ -32,16 +32,11 @@ function extractYear(datum: string | null): number {
 
 // Map LLM activity to Excel activity format
 function mapToExcelActivity(llmActivity: LLMActivity): ExcelActivity {
-  // Combine auftraggeber and thema for the Excel "thema" column
-  const themaParts: string[] = []
-  if (llmActivity.auftraggeber) themaParts.push(llmActivity.auftraggeber)
-  if (llmActivity.thema) themaParts.push(llmActivity.thema)
-
   return {
     datum: llmActivity.datum || new Date().toISOString().split('T')[0],
-    thema: themaParts.join(' / ') || 'Unbekannt',
+    thema: llmActivity.thema || 'Unbekannt',
     taetigkeit: llmActivity.beschreibung,
-    zeit: llmActivity.stunden,
+    zeit: llmActivity.minuten,
     km: llmActivity.km ?? 0,
     hotel: llmActivity.auslagen ?? 0
   }
@@ -75,10 +70,21 @@ export function registerExcelHandlers(): void {
     return null
   })
 
+  // Open file in system default application
+  ipcMain.handle('excel:openFile', async (_event, filePath: string): Promise<boolean> => {
+    try {
+      await shell.openPath(filePath)
+      return true
+    } catch (err) {
+      console.error('[Excel] Failed to open file:', err)
+      return false
+    }
+  })
+
   // Save activity to Excel
   ipcMain.handle(
     'excel:saveActivity',
-    async (_event, activity: LLMActivity): Promise<{ success: boolean; error?: string }> => {
+    async (_event, activity: LLMActivity): Promise<{ success: boolean; error?: string; filePath?: string }> => {
       // Try to find file via Auftraggeber+Jahr from config
       let filePath: string | null = null
 
@@ -115,7 +121,7 @@ export function registerExcelHandlers(): void {
       try {
         const excelActivity = mapToExcelActivity(activity)
         await addActivity(filePath, excelActivity)
-        return { success: true }
+        return { success: true, filePath }
       } catch (err) {
         console.error('[Excel] Save failed:', err)
         return {

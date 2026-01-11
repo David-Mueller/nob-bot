@@ -1,17 +1,19 @@
 # FEAT-007: Settings Management
 
+**Status: ✅ Implementiert**
+
 ## Summary
 
 Persistente Einstellungen für Hotkey, LLM-Provider, API-Keys und Excel-Pfade.
 
 ## Acceptance Criteria
 
-- [ ] Settings werden in JSON-Datei gespeichert
-- [ ] Settings-UI zum Bearbeiten
-- [ ] Hotkey änderbar
-- [ ] LLM-Provider wählbar (Claude/OpenAI)
-- [ ] API-Key sicher speichern
-- [ ] Auftraggeber mit Excel-Pfaden verwalten
+- [x] Settings werden in YAML-Datei gespeichert (~/.aktivitaeten/config.yaml)
+- [x] Settings-UI zum Bearbeiten (Settings.vue Tab)
+- [x] Hotkey änderbar (Neustart erforderlich)
+- [ ] ~~LLM-Provider wählbar (Claude/OpenAI)~~ (nur OpenAI, Claude erfordert größere Refactoring)
+- [x] API-Key sicher speichern (in config.yaml)
+- [x] Auftraggeber mit Excel-Pfaden verwalten (DateiManager)
 
 ## Technical Details
 
