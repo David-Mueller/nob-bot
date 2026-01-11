@@ -9,7 +9,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "build:win": "electron-vite build && electron-builder --win",
+    "build:win": "electron-vite build && electron-builder --win --x64",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
@@ -34,7 +34,6 @@
     "electron": "^39.0.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^5.0.0",
-    "sharp": "^0.34.5",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.3",
     "vite": "^6.0.7",
@@ -54,7 +53,10 @@
     },
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
       ],
       "icon": "resources/icon.png"
     },
@@ -65,7 +67,10 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Aktivitäten",
       "uninstallDisplayName": "Aktivitäten",
-      "installerLanguages": ["de", "en"],
+      "installerLanguages": [
+        "de",
+        "en"
+      ],
       "language": 1031
     },
     "files": [
