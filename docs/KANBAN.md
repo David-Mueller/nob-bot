@@ -19,6 +19,10 @@
 - [x] FEAT-015: TTS für Voice-Rückfragen
 - [x] FEAT-019: Secure API Key Storage (P0)
 - [x] FEAT-020: xlsx Security Update (P0)
+- [x] FEAT-021: IPC Input Validation (P1)
+- [x] FEAT-022: Parallele Glossar-Ladung (P1)
+- [x] FEAT-023: App.vue Refactoring (P1)
+- [x] FEAT-024: Shared Types Module (P1)
 
 ## Review
 
@@ -28,10 +32,7 @@
 
 ## Backlog
 
-- [ ] FEAT-021: IPC Input Validation (P1 - Hoch)
-- [ ] FEAT-022: Parallele Glossar-Ladung (P1 - Hoch)
-- [ ] FEAT-023: App.vue Refactoring (P1 - Hoch)
-- [ ] FEAT-024: Shared Types Module (P1 - Hoch)
+(keine offenen Items)
 
 ---
 
@@ -56,7 +57,7 @@
 | FEAT-017 | Windows Installer | [Spec](specs/FEAT-017-windows-installer.md) | ✅ Done |
 | FEAT-019 | Secure API Key Storage | [Spec](specs/FEAT-019-secure-api-key-storage.md) | ✅ Done |
 | FEAT-020 | xlsx Security Update | [Spec](specs/FEAT-020-xlsx-security-update.md) | ✅ Done |
-| FEAT-021 | IPC Input Validation | [Spec](specs/FEAT-021-input-validation.md) | 📋 Backlog |
-| FEAT-022 | Parallele Glossar-Ladung | [Spec](specs/FEAT-022-parallel-glossar-loading.md) | 📋 Backlog |
-| FEAT-023 | App.vue Refactoring | [Spec](specs/FEAT-023-app-vue-refactoring.md) | 📋 Backlog |
-| FEAT-024 | Shared Types Module | [Spec](specs/FEAT-024-shared-types.md) | 📋 Backlog |
+| FEAT-021 | IPC Input Validation | [Spec](specs/FEAT-021-input-validation.md) | ✅ Done |
+| FEAT-022 | Parallele Glossar-Ladung | [Spec](specs/FEAT-022-parallel-glossar-loading.md) | ✅ Done |
+| FEAT-023 | App.vue Refactoring | [Spec](specs/FEAT-023-app-vue-refactoring.md) | ✅ Done |
+| FEAT-024 | Shared Types Module | [Spec](specs/FEAT-024-shared-types.md) | ✅ Done |
