@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+import type { Activity, XlsxFileConfig, AppSettings, AppConfig, SaveResult, WhisperMode } from '@shared/types'
+
 declare module '*.vue' {
   import type { DefineComponent } from 'vue'
   const component: DefineComponent<object, object, unknown>
@@ -13,9 +15,7 @@ type ProgressCallback = (progress: {
   progress?: number
 }) => void
 
-type WhisperMode = 'cloud' | 'local' | 'none'
-
-interface TranscriptionResult {
+type TranscriptionResult = {
   text: string
   language?: string
   mode: WhisperMode
@@ -25,17 +25,7 @@ interface TranscriptionResult {
   }>
 }
 
-interface Activity {
-  auftraggeber: string | null
-  thema: string | null
-  beschreibung: string
-  minuten: number | null
-  km: number
-  auslagen: number
-  datum: string | null
-}
-
-interface WhisperAPI {
+type WhisperAPI = {
   init: (model?: string) => Promise<void>
   transcribe: (pcmBuffer: ArrayBuffer, originalBlob?: ArrayBuffer) => Promise<TranscriptionResult>
   isReady: () => Promise<boolean>
@@ -44,7 +34,7 @@ interface WhisperAPI {
   onProgress: (callback: ProgressCallback) => () => void
 }
 
-interface LLMAPI {
+type LLMAPI = {
   parse: (transcript: string, clients?: string[], themes?: string[]) => Promise<Activity>
   parseCorrection: (existingActivity: Activity, correctionTranscript: string) => Promise<Activity>
   parseFollowUp: (
@@ -56,7 +46,7 @@ interface LLMAPI {
   isReady: () => Promise<boolean>
 }
 
-interface ExcelActivity {
+type ExcelActivity = {
   row: number
   datum: string
   thema: string
@@ -66,44 +56,23 @@ interface ExcelActivity {
   hotel: number
 }
 
-interface ExcelAPI {
+type ExcelAPI = {
   setPath: (path: string) => Promise<void>
   getPath: () => Promise<string | null>
   selectFile: () => Promise<string | null>
-  saveActivity: (activity: Activity) => Promise<{ success: boolean; error?: string; filePath?: string }>
+  saveActivity: (activity: Activity) => Promise<SaveResult>
   openFile: (filePath: string) => Promise<boolean>
   getActivities: (month: number) => Promise<ExcelActivity[]>
 }
 
-interface XlsxFileConfig {
-  path: string
-  auftraggeber: string
-  jahr: number
-  active: boolean
-}
-
-interface AppSettings {
-  hotkey: string
-  openaiApiKey: string
-  whisperModel: 'tiny' | 'base' | 'small'
-  ttsEnabled: boolean
-  ttsVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
-}
-
-interface AppConfig {
-  xlsxBasePath: string
-  xlsxFiles: XlsxFileConfig[]
-  settings: AppSettings
-}
-
-interface ScannedFile {
+type ScannedFile = {
   path: string
   filename: string
   auftraggeber: string | null
   jahr: number | null
 }
 
-interface ConfigAPI {
+type ConfigAPI = {
   load: () => Promise<AppConfig>
   save: (config: AppConfig) => Promise<void>
   get: () => Promise<AppConfig>
@@ -120,19 +89,19 @@ interface ConfigAPI {
   updateSettings: (updates: Partial<AppSettings>) => Promise<AppSettings>
 }
 
-interface GlossarEntry {
+type GlossarEntry = {
   kategorie: string
   begriff: string
   synonyme: string[]
 }
 
-interface GlossarKnownTerms {
+type GlossarKnownTerms = {
   auftraggeber: string[]
   themen: string[]
   kunden: string[]
 }
 
-interface GlossarAPI {
+type GlossarAPI = {
   load: () => Promise<boolean>
   getKnownTerms: () => Promise<GlossarKnownTerms | null>
   normalize: (text: string) => Promise<string>
@@ -143,12 +112,12 @@ interface GlossarAPI {
 
 type TTSVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
 
-interface TTSAPI {
+type TTSAPI = {
   speak: (text: string, voice?: TTSVoice) => Promise<Uint8Array>
   isReady: () => Promise<boolean>
 }
 
-interface DraftEntry {
+type DraftEntry = {
   id: number
   activity: Activity
   transcript: string
@@ -156,13 +125,13 @@ interface DraftEntry {
   saved: boolean
 }
 
-interface DraftsAPI {
+type DraftsAPI = {
   load: () => Promise<DraftEntry[]>
   save: (drafts: DraftEntry[]) => Promise<void>
   clear: () => Promise<void>
 }
 
-interface ElectronAPI {
+type ElectronAPI = {
   onStartRecording: (callback: RecordingCallback) => void
   removeStartRecordingListener: (callback: RecordingCallback) => void
   whisper: WhisperAPI

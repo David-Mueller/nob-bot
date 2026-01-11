@@ -2,6 +2,8 @@ import { ipcMain, dialog, shell } from 'electron'
 import { addActivity, getActivities, type Activity as ExcelActivity } from '../services/excel'
 import type { Activity as LLMActivity } from '../services/llm'
 import { findFileForAuftraggeber, getActiveFiles } from '../services/config'
+import { validateExcelPath } from '../utils/pathValidator'
+import { ExcelPathSchema, ActivitySchema, MonthSchema } from '../schemas/ipcSchemas'
 
 // Legacy: single file path (for backwards compatibility)
 let legacyFilePath: string | null = process.env.EXCEL_FILE_PATH || null
@@ -44,9 +46,16 @@ function mapToExcelActivity(llmActivity: LLMActivity): ExcelActivity {
 }
 
 export function registerExcelHandlers(): void {
-  // Set Excel file path
-  ipcMain.handle('excel:setPath', (_event, path: string): void => {
-    setExcelFilePath(path)
+  // Set Excel file path - validates path before setting
+  ipcMain.handle('excel:setPath', (_event, path: unknown): void => {
+    try {
+      const validated = ExcelPathSchema.parse(path)
+      const safePath = validateExcelPath(validated)
+      setExcelFilePath(safePath)
+    } catch (err) {
+      console.error('[Excel] Invalid path for setPath:', err)
+      throw err
+    }
   })
 
   // Get current file path (legacy)
@@ -64,20 +73,29 @@ export function registerExcelHandlers(): void {
 
     if (!result.canceled && result.filePaths.length > 0) {
       const path = result.filePaths[0]
-      setExcelFilePath(path)
-      return path
+      // Dialog-selected paths are trusted, but still validate for safety
+      try {
+        const safePath = validateExcelPath(path)
+        setExcelFilePath(safePath)
+        return safePath
+      } catch (err) {
+        console.error('[Excel] Dialog path validation failed:', err)
+        return null
+      }
     }
 
     return null
   })
 
   // Open file in system default application
-  ipcMain.handle('excel:openFile', async (_event, filePath: string): Promise<boolean> => {
+  ipcMain.handle('excel:openFile', async (_event, filePath: unknown): Promise<boolean> => {
     try {
-      await shell.openPath(filePath)
+      const validated = ExcelPathSchema.parse(filePath)
+      const safePath = validateExcelPath(validated)
+      await shell.openPath(safePath)
       return true
     } catch (err) {
-      console.error('[Excel] Failed to open file:', err)
+      console.error('[Excel] Invalid path for openFile:', err)
       return false
     }
   })
@@ -85,19 +103,33 @@ export function registerExcelHandlers(): void {
   // Save activity to Excel
   ipcMain.handle(
     'excel:saveActivity',
-    async (_event, activity: LLMActivity): Promise<{ success: boolean; error?: string; filePath?: string }> => {
+    async (
+      _event,
+      activity: unknown
+    ): Promise<{ success: boolean; error?: string; filePath?: string }> => {
+      // Validate activity input with Zod
+      let validatedActivity: LLMActivity
+      try {
+        validatedActivity = ActivitySchema.parse(activity) as LLMActivity
+      } catch (err) {
+        console.error('[Excel] Invalid activity data:', err)
+        return { success: false, error: 'Ungültige Aktivitätsdaten' }
+      }
+
       // Try to find file via Auftraggeber+Jahr from config
       let filePath: string | null = null
 
-      if (activity.auftraggeber) {
-        const jahr = extractYear(activity.datum)
-        const configFile = findFileForAuftraggeber(activity.auftraggeber, jahr)
+      if (validatedActivity.auftraggeber) {
+        const jahr = extractYear(validatedActivity.datum)
+        const configFile = findFileForAuftraggeber(validatedActivity.auftraggeber, jahr)
 
         if (configFile) {
           filePath = configFile.path
-          console.log(`[Excel] Found config file for ${activity.auftraggeber}/${jahr}: ${filePath}`)
+          console.log(
+            `[Excel] Found config file for ${validatedActivity.auftraggeber}/${jahr}: ${filePath}`
+          )
         } else {
-          console.log(`[Excel] No config file for ${activity.auftraggeber}/${jahr}`)
+          console.log(`[Excel] No config file for ${validatedActivity.auftraggeber}/${jahr}`)
         }
       }
 
@@ -111,18 +143,23 @@ export function registerExcelHandlers(): void {
         // Check if any active files exist
         const activeFiles = getActiveFiles()
         if (activeFiles.length === 0) {
-          return { success: false, error: 'Keine aktiven Excel-Dateien konfiguriert. Bitte unter "Dateien" konfigurieren.' }
+          return {
+            success: false,
+            error: 'Keine aktiven Excel-Dateien konfiguriert. Bitte unter "Dateien" konfigurieren.'
+          }
         }
         return {
           success: false,
-          error: `Keine Datei für Auftraggeber "${activity.auftraggeber || 'unbekannt'}" gefunden. Verfügbar: ${activeFiles.map(f => f.auftraggeber).join(', ')}`
+          error: `Keine Datei für Auftraggeber "${validatedActivity.auftraggeber || 'unbekannt'}" gefunden. Verfügbar: ${activeFiles.map((f) => f.auftraggeber).join(', ')}`
         }
       }
 
+      // Validate the resolved file path
       try {
-        const excelActivity = mapToExcelActivity(activity)
-        await addActivity(filePath, excelActivity)
-        return { success: true, filePath }
+        const safePath = validateExcelPath(filePath)
+        const excelActivity = mapToExcelActivity(validatedActivity)
+        await addActivity(safePath, excelActivity)
+        return { success: true, filePath: safePath }
       } catch (err) {
         console.error('[Excel] Save failed:', err)
         return {
@@ -136,13 +173,24 @@ export function registerExcelHandlers(): void {
   // Get activities for a month (legacy - uses single file)
   ipcMain.handle(
     'excel:getActivities',
-    async (_event, month: number): Promise<Array<ExcelActivity & { row: number }>> => {
+    async (_event, month: unknown): Promise<Array<ExcelActivity & { row: number }>> => {
+      // Validate month input
+      let validatedMonth: number
+      try {
+        validatedMonth = MonthSchema.parse(month)
+      } catch (err) {
+        console.error('[Excel] Invalid month:', err)
+        return []
+      }
+
       if (!legacyFilePath) {
         return []
       }
 
       try {
-        return await getActivities(legacyFilePath, month)
+        // Validate legacy file path
+        const safePath = validateExcelPath(legacyFilePath)
+        return await getActivities(safePath, validatedMonth)
       } catch (err) {
         console.error('[Excel] Read failed:', err)
         return []

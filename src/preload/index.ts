@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { Activity, XlsxFileConfig, AppSettings, AppConfig, SaveResult, WhisperMode } from '@shared/types'
 
 type RecordingCallback = () => void
 type ProgressCallback = (progress: {
@@ -7,7 +8,7 @@ type ProgressCallback = (progress: {
   progress?: number
 }) => void
 
-interface TranscriptionResult {
+type TranscriptionResult = {
   text: string
   chunks?: Array<{
     text: string
@@ -15,38 +16,7 @@ interface TranscriptionResult {
   }>
 }
 
-interface Activity {
-  auftraggeber: string | null
-  thema: string | null
-  beschreibung: string
-  minuten: number | null
-  km: number
-  auslagen: number
-  datum: string | null
-}
-
-interface XlsxFileConfig {
-  path: string
-  auftraggeber: string
-  jahr: number
-  active: boolean
-}
-
-interface AppSettings {
-  hotkey: string
-  openaiApiKey: string
-  whisperModel: 'tiny' | 'base' | 'small'
-  ttsEnabled: boolean
-  ttsVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
-}
-
-interface AppConfig {
-  xlsxBasePath: string
-  xlsxFiles: XlsxFileConfig[]
-  settings: AppSettings
-}
-
-interface ScannedFile {
+type ScannedFile = {
   path: string
   filename: string
   auftraggeber: string | null
@@ -76,7 +46,7 @@ const api = {
     isLoading: (): Promise<boolean> => {
       return ipcRenderer.invoke('whisper:isLoading')
     },
-    getMode: (): Promise<'cloud' | 'local' | 'none'> => {
+    getMode: (): Promise<WhisperMode> => {
       return ipcRenderer.invoke('whisper:getMode')
     },
     onProgress: (callback: ProgressCallback): (() => void) => {
@@ -120,7 +90,7 @@ const api = {
     selectFile: (): Promise<string | null> => {
       return ipcRenderer.invoke('excel:selectFile')
     },
-    saveActivity: (activity: Activity): Promise<{ success: boolean; error?: string; filePath?: string }> => {
+    saveActivity: (activity: Activity): Promise<SaveResult> => {
       return ipcRenderer.invoke('excel:saveActivity', activity)
     },
     openFile: (filePath: string): Promise<boolean> => {
@@ -229,15 +199,7 @@ const api = {
   drafts: {
     load: (): Promise<Array<{
       id: number
-      activity: {
-        auftraggeber: string | null
-        thema: string | null
-        beschreibung: string
-        minuten: number | null
-        km: number
-        auslagen: number
-        datum: string | null
-      }
+      activity: Activity
       transcript: string
       timestamp: string
       saved: boolean
@@ -246,15 +208,7 @@ const api = {
     },
     save: (drafts: Array<{
       id: number
-      activity: {
-        auftraggeber: string | null
-        thema: string | null
-        beschreibung: string
-        minuten: number | null
-        km: number
-        auslagen: number
-        datum: string | null
-      }
+      activity: Activity
       transcript: string
       timestamp: string
       saved: boolean

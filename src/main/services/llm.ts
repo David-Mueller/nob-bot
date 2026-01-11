@@ -4,12 +4,17 @@ import { config } from 'dotenv'
 import { app } from 'electron'
 import { join } from 'path'
 import { getApiKey } from './config'
+import type { Activity } from '@shared/types'
 
 // Load .env from app root (fallback for API key)
 config({ path: join(app.getAppPath(), '.env') })
 
-// Schema for parsed activity - no .default() for OpenAI compatibility
-export const ActivitySchema = z.object({
+// Re-export Activity type for consumers that import from this module
+export type { Activity }
+
+// Schema for LLM parsing - allows nullable for fields LLM might not extract
+// Note: km and auslagen are nullable here for LLM, but converted to non-nullable numbers at boundary
+const LLMActivitySchema = z.object({
   auftraggeber: z.string().nullable().describe('Name des Auftraggebers/Firma'),
   thema: z.string().nullable().describe('Kunde, Kontakt oder Projekt'),
   beschreibung: z.string().describe('Beschreibung der Tätigkeit'),
@@ -18,8 +23,6 @@ export const ActivitySchema = z.object({
   auslagen: z.number().nullable().describe('Kostenauslagen in Euro, 0 wenn nicht erwähnt'),
   datum: z.string().nullable().describe('Datum im Format YYYY-MM-DD, null = heute')
 })
-
-export type Activity = z.infer<typeof ActivitySchema>
 
 const SYSTEM_PROMPT = `Du bist ein Assistent zur Erfassung von Arbeitsaktivitäten eines selbstständigen Vertreters.
 Heute ist: {today}
@@ -116,7 +119,7 @@ export async function parseActivity(
     throw new Error('LLM not initialized')
   }
 
-  const structuredLLM = llm.withStructuredOutput(ActivitySchema)
+  const structuredLLM = llm.withStructuredOutput(LLMActivitySchema)
 
   const today = new Date().toLocaleDateString('de-DE', {
     weekday: 'long',
@@ -263,7 +266,7 @@ export async function parseFollowUpAnswer(
     throw new Error('LLM not initialized')
   }
 
-  const structuredLLM = llm.withStructuredOutput(ActivitySchema)
+  const structuredLLM = llm.withStructuredOutput(LLMActivitySchema)
 
   const today = new Date().toLocaleDateString('de-DE', {
     weekday: 'long',
@@ -318,7 +321,7 @@ export async function parseCorrection(
     throw new Error('LLM not initialized')
   }
 
-  const structuredLLM = llm.withStructuredOutput(ActivitySchema)
+  const structuredLLM = llm.withStructuredOutput(LLMActivitySchema)
 
   const today = new Date().toLocaleDateString('de-DE', {
     weekday: 'long',

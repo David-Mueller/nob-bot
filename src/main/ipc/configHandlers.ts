@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import { stat } from 'fs/promises'
 import {
   loadConfig,
   saveConfig,
@@ -14,6 +15,14 @@ import {
   type AppSettings
 } from '../services/config'
 import { scanDirectory, type ScannedFile } from '../services/fileScanner'
+import { validatePath, validateExcelPath } from '../utils/pathValidator'
+import {
+  FilePathSchema,
+  ExcelPathSchema,
+  SettingsUpdateSchema,
+  FileConfigUpdateSchema,
+  AuftraggeberLookupSchema
+} from '../schemas/ipcSchemas'
 
 export function registerConfigHandlers(): void {
   // Load config from file
@@ -31,11 +40,25 @@ export function registerConfigHandlers(): void {
     return getConfig()
   })
 
-  // Update base path
-  ipcMain.handle('config:setBasePath', async (_event, path: string): Promise<void> => {
-    const config = getConfig()
-    config.xlsxBasePath = path
-    await saveConfig(config)
+  // Update base path - validates path and ensures it's a directory
+  ipcMain.handle('config:setBasePath', async (_event, path: unknown): Promise<void> => {
+    try {
+      const validated = FilePathSchema.parse(path)
+      const safePath = validatePath(validated)
+
+      // Verify directory exists
+      const stats = await stat(safePath)
+      if (!stats.isDirectory()) {
+        throw new Error('Path must be a directory')
+      }
+
+      const config = getConfig()
+      config.xlsxBasePath = safePath
+      await saveConfig(config)
+    } catch (err) {
+      console.error('[Config] Invalid base path:', err)
+      throw err
+    }
   })
 
   // Get base path
@@ -54,10 +77,18 @@ export function registerConfigHandlers(): void {
     'config:updateFile',
     async (
       _event,
-      path: string,
-      updates: Partial<Omit<XlsxFileConfig, 'path'>>
+      path: unknown,
+      updates: unknown
     ): Promise<void> => {
-      await updateXlsxFile(path, updates)
+      try {
+        const validatedPath = ExcelPathSchema.parse(path)
+        const safePath = validateExcelPath(validatedPath)
+        const validatedUpdates = FileConfigUpdateSchema.parse(updates)
+        await updateXlsxFile(safePath, validatedUpdates)
+      } catch (err) {
+        console.error('[Config] Invalid file update:', err)
+        throw err
+      }
     }
   )
 
@@ -74,26 +105,44 @@ export function registerConfigHandlers(): void {
   // Find file for auftraggeber and year
   ipcMain.handle(
     'config:findFile',
-    (_event, auftraggeber: string, jahr: number): XlsxFileConfig | null => {
-      return findFileForAuftraggeber(auftraggeber, jahr)
+    (_event, auftraggeber: unknown, jahr: unknown): XlsxFileConfig | null => {
+      try {
+        const validated = AuftraggeberLookupSchema.parse({ auftraggeber, jahr })
+        return findFileForAuftraggeber(validated.auftraggeber, validated.jahr)
+      } catch (err) {
+        console.error('[Config] Invalid auftraggeber lookup:', err)
+        return null
+      }
     }
   )
 
   // Toggle file active status
   ipcMain.handle(
     'config:toggleFileActive',
-    async (_event, path: string, active: boolean): Promise<void> => {
-      await updateXlsxFile(path, { active })
+    async (_event, path: unknown, active: unknown): Promise<void> => {
+      try {
+        const validatedPath = ExcelPathSchema.parse(path)
+        const safePath = validateExcelPath(validatedPath)
+        const validatedActive = typeof active === 'boolean' ? active : false
+        await updateXlsxFile(safePath, { active: validatedActive })
+      } catch (err) {
+        console.error('[Config] Invalid toggle file active:', err)
+        throw err
+      }
     }
   )
 
   // Remove file from config
-  ipcMain.handle(
-    'config:removeFile',
-    async (_event, path: string): Promise<void> => {
-      await removeXlsxFile(path)
+  ipcMain.handle('config:removeFile', async (_event, path: unknown): Promise<void> => {
+    try {
+      const validatedPath = ExcelPathSchema.parse(path)
+      const safePath = validateExcelPath(validatedPath)
+      await removeXlsxFile(safePath)
+    } catch (err) {
+      console.error('[Config] Invalid remove file:', err)
+      throw err
     }
-  )
+  })
 
   // Get settings
   ipcMain.handle('config:getSettings', (): AppSettings => {
@@ -103,8 +152,14 @@ export function registerConfigHandlers(): void {
   // Update settings
   ipcMain.handle(
     'config:updateSettings',
-    async (_event, updates: Partial<AppSettings>): Promise<AppSettings> => {
-      return await updateSettings(updates)
+    async (_event, updates: unknown): Promise<AppSettings> => {
+      try {
+        const validatedUpdates = SettingsUpdateSchema.parse(updates)
+        return await updateSettings(validatedUpdates)
+      } catch (err) {
+        console.error('[Config] Invalid settings update:', err)
+        throw err
+      }
     }
   )
 }

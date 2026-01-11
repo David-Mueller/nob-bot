@@ -89,8 +89,10 @@ app.whenReady().then(async () => {
   registerTTSHandlers();
   registerDraftsHandlers();
 
-  // Load glossar from active files
-  await reloadGlossar();
+  // Non-blocking glossar load - app is usable immediately
+  reloadGlossar().catch((err) => {
+    console.error('[Startup] Glossar load failed:', err);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -10,6 +10,8 @@ import {
   type GlossarEintrag
 } from '../services/glossar'
 import { getActiveFiles, type XlsxFileConfig } from '../services/config'
+import { validateExcelPath } from '../utils/pathValidator'
+import { ExcelPathSchema, StringInputSchema } from '../schemas/ipcSchemas'
 
 // Current merged glossar from all active files
 let currentGlossar: Glossar | null = null
@@ -18,7 +20,7 @@ export function registerGlossarHandlers(): void {
   // Load glossar from all active Excel files
   ipcMain.handle('glossar:load', async (): Promise<boolean> => {
     const activeFiles = getActiveFiles()
-    const paths = activeFiles.map(f => f.path)
+    const paths = activeFiles.map((f) => f.path)
 
     if (paths.length === 0) {
       console.log('[Glossar] No active files to load glossar from')
@@ -31,23 +33,35 @@ export function registerGlossarHandlers(): void {
   })
 
   // Get all known terms for LLM prompts
-  ipcMain.handle('glossar:getKnownTerms', (): {
-    auftraggeber: string[]
-    themen: string[]
-    kunden: string[]
-  } | null => {
-    if (!currentGlossar) {
-      return null
+  ipcMain.handle(
+    'glossar:getKnownTerms',
+    (): {
+      auftraggeber: string[]
+      themen: string[]
+      kunden: string[]
+    } | null => {
+      if (!currentGlossar) {
+        return null
+      }
+      return getAllKnownTerms(currentGlossar)
     }
-    return getAllKnownTerms(currentGlossar)
-  })
+  )
 
   // Normalize a text using glossar
-  ipcMain.handle('glossar:normalize', (_event, text: string): string => {
-    if (!currentGlossar) {
-      return text
+  ipcMain.handle('glossar:normalize', (_event, text: unknown): string => {
+    // Validate text input
+    let validatedText: string
+    try {
+      validatedText = StringInputSchema.parse(text)
+    } catch (err) {
+      console.error('[Glossar] Invalid text for normalize:', err)
+      return typeof text === 'string' ? text : ''
     }
-    return normalizeText(text, currentGlossar)
+
+    if (!currentGlossar) {
+      return validatedText
+    }
+    return normalizeText(validatedText, currentGlossar)
   })
 
   // Get all glossar entries
@@ -68,14 +82,23 @@ export function registerGlossarHandlers(): void {
   // Create Glossar sheet for a specific file from existing data
   ipcMain.handle(
     'glossar:createFromData',
-    async (_event, filePath: string, auftraggeber: string): Promise<boolean> => {
-      const glossar = await ensureGlossar(filePath, auftraggeber)
-      if (glossar) {
-        // Reload full glossar to include new entries
-        await reloadGlossar()
-        return true
+    async (_event, filePath: unknown, auftraggeber: unknown): Promise<boolean> => {
+      try {
+        const validatedPath = ExcelPathSchema.parse(filePath)
+        const safePath = validateExcelPath(validatedPath)
+        const validatedAuftraggeber = StringInputSchema.parse(auftraggeber)
+
+        const glossar = await ensureGlossar(safePath, validatedAuftraggeber)
+        if (glossar) {
+          // Reload full glossar to include new entries
+          await reloadGlossar()
+          return true
+        }
+        return false
+      } catch (err) {
+        console.error('[Glossar] Invalid createFromData params:', err)
+        return false
       }
-      return false
     }
   )
 }
@@ -90,6 +113,7 @@ export function getCurrentGlossar(): Glossar | null {
 /**
  * Reload the glossar from active files.
  * Creates Glossar sheets from existing data if they don't exist.
+ * Uses parallel loading for better performance.
  */
 export async function reloadGlossar(): Promise<void> {
   const activeFiles = getActiveFiles()
@@ -99,14 +123,16 @@ export async function reloadGlossar(): Promise<void> {
     return
   }
 
-  // Ensure each file has a Glossar sheet (create if missing)
-  const glossars: Glossar[] = []
-  for (const file of activeFiles) {
-    const glossar = await ensureGlossar(file.path, file.auftraggeber)
-    if (glossar) {
-      glossars.push(glossar)
-    }
-  }
+  // Parallel loading - errors in one file don't block others
+  const glossarPromises = activeFiles.map((file) =>
+    ensureGlossar(file.path, file.auftraggeber).catch((err) => {
+      console.error(`[Glossar] Failed to load ${file.path}:`, err)
+      return null
+    })
+  )
+
+  const results = await Promise.all(glossarPromises)
+  const glossars = results.filter((g): g is Glossar => g !== null)
 
   if (glossars.length === 0) {
     currentGlossar = null

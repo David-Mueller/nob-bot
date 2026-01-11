@@ -1,70 +1,41 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, toRaw, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, toRaw, watch } from 'vue'
 import RecordingWindow from './components/RecordingWindow.vue'
 import ActivityList from './components/ActivityList.vue'
 import DateiManager from './components/DateiManager.vue'
 import Settings from './components/Settings.vue'
+
+// Stores
+import { useActivityStore, getMissingFieldKeys, getMissingFields, getNextFollowUpQuestion, formatTime, formatActivity, type ActivityEntry } from './stores/activities'
+import { useRecordingStore } from './stores/recording'
+import { useChatStore, getLanguageLabel } from './stores/chat'
+
+// Composables
 import { useWhisper } from './composables/useWhisper'
-
-type Activity = {
-  auftraggeber: string | null
-  thema: string | null
-  beschreibung: string
-  minuten: number | null
-  km: number
-  auslagen: number
-  datum: string | null
-}
-
-type WhisperMode = 'cloud' | 'local' | 'none'
-
-type ChatMessage = {
-  id: number
-  type: 'user' | 'assistant' | 'error'
-  content: string
-  language?: string
-  mode?: WhisperMode
-  activity?: Activity
-  filePath?: string
-  timestamp: Date
-}
-
-type ActivityEntry = {
-  id: number
-  activity: Activity
-  transcript: string
-  timestamp: Date
-  saved: boolean
-  savedFilePath?: string
-}
+import { useTTS } from './composables/useTTS'
+import { useDrafts } from './composables/useDrafts'
 
 type ViewTab = 'record' | 'list' | 'files' | 'settings'
 
-const showRecording = ref(false)
-const isProcessing = ref(false)
-const processingStep = ref<'transcribing' | 'parsing' | null>(null)
-const messages = ref<ChatMessage[]>([])
-const entries = ref<ActivityEntry[]>([])
+// Stores
+const activityStore = useActivityStore()
+const recordingStore = useRecordingStore()
+const chatStore = useChatStore()
+
+// Composables
+const { status: whisperStatus, loadingProgress, error: whisperError, init: initWhisper, transcribe } = useWhisper()
+const { speak } = useTTS()
+const { loadDrafts, setupAutoSave } = useDrafts()
+
+// Local UI state
 const currentView = ref<ViewTab>('record')
-const editingEntry = ref<ActivityEntry | null>(null)
 const chatContainer = ref<HTMLElement | null>(null)
-let messageId = 0
-let entryId = 0
 
-// Auto-scroll chat to bottom when new messages arrive
-const scrollChatToBottom = (): void => {
-  nextTick(() => {
-    if (chatContainer.value) {
-      chatContainer.value.scrollTop = chatContainer.value.scrollHeight
-    }
-  })
-}
+// Keep chat container ref synced with store
+watch(chatContainer, (el) => chatStore.setChatContainer(el))
 
-watch(messages, scrollChatToBottom, { deep: true })
-watch(isProcessing, scrollChatToBottom)
-
-// Count unsaved entries for badge
-const unsavedCount = computed(() => entries.value.filter(e => !e.saved).length)
+// Auto-scroll when processing state changes
+watch(() => recordingStore.isProcessing, () => chatStore.scrollToBottom())
 
 // Active Excel files from config
 const activeFileCount = ref(0)
@@ -76,45 +47,20 @@ const loadActiveFiles = async (): Promise<void> => {
   activeClients.value = [...new Set(files.map(f => f.auftraggeber))]
 }
 
-// Load saved drafts on startup
-const loadDrafts = async (): Promise<void> => {
-  const drafts = await window.api?.drafts.load() || []
-  if (drafts.length > 0) {
-    entries.value = drafts.map(d => ({
-      ...d,
-      timestamp: new Date(d.timestamp)
-    }))
-    // Find max id to continue from
-    entryId = Math.max(...entries.value.map(e => e.id), 0)
-    console.log(`[Drafts] Restored ${drafts.length} entries`)
-  }
-}
-
-// Auto-save drafts when entries change
-const saveDrafts = async (): Promise<void> => {
-  const drafts = entries.value.map(e => ({
-    ...toRaw(e),
-    timestamp: e.timestamp.toISOString()
-  }))
-  await window.api?.drafts.save(drafts)
-}
-
-// Debounced watcher for auto-save
-let saveTimeout: ReturnType<typeof setTimeout> | null = null
-watch(entries, () => {
-  if (saveTimeout) clearTimeout(saveTimeout)
-  saveTimeout = setTimeout(saveDrafts, 1000)
-}, { deep: true })
-
 // Editing/follow-up context for voice input
 const editingContextText = computed(() => {
   // Follow-up question has priority
-  if (followUpEntry.value && currentFollowUpQuestion.value) {
-    return currentFollowUpQuestion.value
+  if (recordingStore.isFollowUp && recordingStore.currentFollowUpQuestion) {
+    return recordingStore.currentFollowUpQuestion
   }
 
-  if (!editingEntry.value) return undefined
-  const a = editingEntry.value.activity
+  const editingId = recordingStore.editingEntryId
+  if (!editingId) return undefined
+
+  const entry = activityStore.getEntryById(editingId)
+  if (!entry) return undefined
+
+  const a = entry.activity
   const parts: string[] = []
   if (a.auftraggeber) parts.push(a.auftraggeber)
   if (a.thema) parts.push(a.thema)
@@ -124,373 +70,129 @@ const editingContextText = computed(() => {
   return parts.join(' • ')
 })
 
-const {
-  status: whisperStatus,
-  loadingProgress,
-  error: whisperError,
-  init: initWhisper,
-  transcribe
-} = useWhisper()
-
 const handleStartRecording = (): void => {
-  showRecording.value = true
-}
-
-const addMessage = (msg: Omit<ChatMessage, 'id' | 'timestamp'>): void => {
-  messages.value.push({
-    ...msg,
-    id: ++messageId,
-    timestamp: new Date()
-  })
+  recordingStore.showOverlay()
 }
 
 const handleRecorded = async (blob: Blob): Promise<void> => {
   console.log('Recording completed:', blob.size, 'bytes')
-  showRecording.value = false
-  isProcessing.value = true
+  recordingStore.hideOverlay()
+  recordingStore.setProcessing(true, 'transcribing')
 
-  const isEditing = editingEntry.value !== null
-  const isFollowUp = followUpEntry.value !== null
+  const isEditing = recordingStore.isEditing
+  const isFollowUp = recordingStore.isFollowUp
+  const editingId = recordingStore.editingEntryId
+  const followUpId = recordingStore.followUpEntryId
 
   // Step 1: Transcribe
-  processingStep.value = 'transcribing'
   const result = await transcribe(blob)
 
   if (!result) {
-    addMessage({ type: 'error', content: 'Transkription fehlgeschlagen' })
-    isProcessing.value = false
-    processingStep.value = null
-    editingEntry.value = null
-    followUpEntry.value = null
-    currentFollowUpQuestion.value = null
+    chatStore.addErrorMessage('Transkription fehlgeschlagen')
+    recordingStore.reset()
     return
   }
 
   // Add user message with transcription
-  const messagePrefix = isFollowUp ? '💬 ' : (isEditing ? '✏️ ' : '')
-  addMessage({
-    type: 'user',
-    content: `${messagePrefix}${result.text}`,
-    language: result.language,
-    mode: result.mode
-  })
+  const messagePrefix = isFollowUp ? '\uD83D\uDCAC ' : (isEditing ? '\u270F\uFE0F ' : '')
+  chatStore.addUserMessage(`${messagePrefix}${result.text}`, result.language, result.mode)
 
   console.log('Transcription:', result.text, 'Language:', result.language, 'Mode:', result.mode)
 
   // Step 2: Parse with LLM
-  processingStep.value = 'parsing'
+  recordingStore.setProcessing(true, 'parsing')
   try {
-    if (isFollowUp && followUpEntry.value && currentFollowUpQuestion.value) {
+    if (isFollowUp && followUpId && recordingStore.currentFollowUpQuestion) {
       // Follow-up mode: parse answer for missing fields
-      const updatedActivity = await window.api?.llm.parseFollowUp(
-        toRaw(followUpEntry.value.activity),
-        result.text,
-        getMissingFieldKeys(followUpEntry.value.activity),
-        currentFollowUpQuestion.value
-      )
-      if (updatedActivity) {
-        followUpEntry.value.activity = updatedActivity
-        followUpEntry.value.transcript += ` → ${result.text}`
-
-        addMessage({
-          type: 'assistant',
-          content: `✅ Aktualisiert:\n${formatActivity(updatedActivity)}`,
-          activity: updatedActivity
-        })
-
-        // Check if still missing fields
-        const nextQuestion = getNextFollowUpQuestion(updatedActivity)
-        if (nextQuestion) {
-          // More fields missing - continue follow-up
-          currentFollowUpQuestion.value = nextQuestion.question
-          addMessage({
-            type: 'assistant',
-            content: `🎤 ${nextQuestion.question}`
+      const entry = activityStore.getEntryById(followUpId)
+      if (entry) {
+        const updatedActivity = await window.api?.llm.parseFollowUp(
+          toRaw(entry.activity),
+          result.text,
+          getMissingFieldKeys(entry.activity),
+          recordingStore.currentFollowUpQuestion
+        )
+        if (updatedActivity) {
+          activityStore.updateEntry(followUpId, {
+            activity: updatedActivity,
+            transcript: entry.transcript + ` → ${result.text}`
           })
-          // Speak the question (non-blocking)
-          speakQuestion(nextQuestion.question)
-          isProcessing.value = false
-          processingStep.value = null
-          showRecording.value = true
-          return
-        } else {
-          // All fields filled - done with follow-up
-          console.log('Follow-up complete:', updatedActivity)
-          followUpEntry.value = null
-          currentFollowUpQuestion.value = null
+
+          chatStore.addAssistantMessage(`\u2705 Aktualisiert:\n${formatActivity(updatedActivity)}`, updatedActivity)
+
+          // Check if still missing fields
+          const nextQuestion = getNextFollowUpQuestion(updatedActivity)
+          if (nextQuestion) {
+            // More fields missing - continue follow-up
+            recordingStore.startFollowUp(followUpId, nextQuestion.question)
+            chatStore.addAssistantMessage(`\uD83C\uDF99 ${nextQuestion.question}`)
+            // Speak the question (non-blocking)
+            speak(nextQuestion.question)
+            recordingStore.setProcessing(false)
+            recordingStore.showOverlay()
+            return
+          } else {
+            // All fields filled - done with follow-up
+            console.log('Follow-up complete:', updatedActivity)
+            recordingStore.clearFollowUp()
+          }
         }
       }
-    } else if (isEditing && editingEntry.value) {
+    } else if (isEditing && editingId) {
       // Correction mode: update existing entry
-      // toRaw() needed to remove Vue proxy for IPC serialization
-      const correctedActivity = await window.api?.llm.parseCorrection(
-        toRaw(editingEntry.value.activity),
-        result.text
-      )
-      if (correctedActivity) {
-        // Update the entry
-        editingEntry.value.activity = correctedActivity
-        editingEntry.value.transcript += ` → ${result.text}`
+      const entry = activityStore.getEntryById(editingId)
+      if (entry) {
+        const correctedActivity = await window.api?.llm.parseCorrection(
+          toRaw(entry.activity),
+          result.text
+        )
+        if (correctedActivity) {
+          activityStore.updateEntry(editingId, {
+            activity: correctedActivity,
+            transcript: entry.transcript + ` → ${result.text}`
+          })
 
-        addMessage({
-          type: 'assistant',
-          content: `✏️ Korrigiert:\n${formatActivity(correctedActivity)}`,
-          activity: correctedActivity
-        })
-        console.log('Corrected activity:', correctedActivity)
+          chatStore.addAssistantMessage(`\u270F\uFE0F Korrigiert:\n${formatActivity(correctedActivity)}`, correctedActivity)
+          console.log('Corrected activity:', correctedActivity)
+        }
       }
-      editingEntry.value = null
+      recordingStore.clearEditing()
     } else {
       // New entry mode
       const activity = await window.api?.llm.parse(result.text)
       if (activity) {
-        addMessage({
-          type: 'assistant',
-          content: formatActivity(activity),
-          activity
-        })
+        chatStore.addAssistantMessage(formatActivity(activity), activity)
         console.log('Parsed activity:', activity)
 
         // Create the entry
-        const newEntry: ActivityEntry = {
-          id: ++entryId,
-          activity,
-          transcript: result.text,
-          timestamp: new Date(),
-          saved: false
-        }
-        entries.value.push(newEntry)
+        const newEntry = activityStore.addEntry(activity, result.text)
 
         // Check if required fields are missing
         const nextQuestion = getNextFollowUpQuestion(activity)
         if (nextQuestion) {
           // Start follow-up flow
-          followUpEntry.value = newEntry
-          currentFollowUpQuestion.value = nextQuestion.question
-          addMessage({
-            type: 'assistant',
-            content: `⚠️ Fehlend: ${getMissingFields(activity).join(', ')}\n\n🎤 ${nextQuestion.question}`
-          })
+          recordingStore.startFollowUp(newEntry.id, nextQuestion.question)
+          chatStore.addAssistantMessage(`\u26A0\uFE0F Fehlend: ${getMissingFields(activity).join(', ')}\n\n\uD83C\uDF99 ${nextQuestion.question}`)
           // Speak the question (non-blocking)
-          speakQuestion(nextQuestion.question)
-          isProcessing.value = false
-          processingStep.value = null
-          showRecording.value = true
+          speak(nextQuestion.question)
+          recordingStore.setProcessing(false)
+          recordingStore.showOverlay()
           return
         }
       }
     }
   } catch (err) {
     console.error('LLM parsing failed:', err)
-    addMessage({
-      type: 'error',
-      content: err instanceof Error ? err.message : 'Parsing fehlgeschlagen'
-    })
-    editingEntry.value = null
-    followUpEntry.value = null
-    currentFollowUpQuestion.value = null
+    chatStore.addErrorMessage(err instanceof Error ? err.message : 'Parsing fehlgeschlagen')
+    recordingStore.reset()
+    return
   }
 
-  isProcessing.value = false
-  processingStep.value = null
+  recordingStore.setProcessing(false)
 }
 
 const handleCancelled = (): void => {
-  showRecording.value = false
-  editingEntry.value = null
-  followUpEntry.value = null
-  currentFollowUpQuestion.value = null
-}
-
-const formatActivity = (activity: Activity): string => {
-  const parts: string[] = []
-  if (activity.auftraggeber) parts.push(`**Auftraggeber:** ${activity.auftraggeber}`)
-  if (activity.thema) parts.push(`**Thema:** ${activity.thema}`)
-  parts.push(`**Beschreibung:** ${activity.beschreibung}`)
-  if (activity.minuten !== null) parts.push(`**Zeit:** ${formatTime(activity.minuten)}`)
-  if (activity.km && activity.km > 0) parts.push(`**KM:** ${activity.km}`)
-  if (activity.auslagen && activity.auslagen > 0) parts.push(`**Auslagen:** ${activity.auslagen}€`)
-  if (activity.datum) parts.push(`**Datum:** ${activity.datum}`)
-  return parts.join('\n')
-}
-
-const getLanguageLabel = (lang?: string): string => {
-  const labels: Record<string, string> = {
-    german: 'Deutsch',
-    polish: 'Polnisch',
-    english: 'Englisch',
-    de: 'Deutsch',
-    pl: 'Polnisch',
-    en: 'Englisch'
-  }
-  return lang ? labels[lang.toLowerCase()] || lang : 'Unbekannt'
-}
-
-// Format minutes to hh:mm or mm min
-const formatTime = (minutes: number): string => {
-  if (minutes < 60) {
-    return `${minutes} min`
-  }
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  if (m === 0) {
-    return `${h}h`
-  }
-  return `${h}h ${m}min`
-}
-
-// Required fields configuration with German labels and follow-up questions
-const REQUIRED_FIELDS: { key: keyof Activity; label: string; question: string }[] = [
-  { key: 'auftraggeber', label: 'Auftraggeber', question: 'Für welchen Auftraggeber war das?' },
-  { key: 'thema', label: 'Thema', question: 'Um welches Thema oder Projekt ging es?' },
-  { key: 'minuten', label: 'Zeit', question: 'Wie lange hat das gedauert?' }
-]
-
-// Get missing required fields (internal keys for IPC)
-const getMissingFieldKeys = (activity: Activity): string[] => {
-  return REQUIRED_FIELDS
-    .filter(f => activity[f.key] === null)
-    .map(f => f.key)
-}
-
-// Get missing fields with German labels for display
-const getMissingFields = (activity: Activity): string[] => {
-  return REQUIRED_FIELDS
-    .filter(f => activity[f.key] === null)
-    .map(f => f.label)
-}
-
-// Get the latest complete unsaved entry (for quick save in chat)
-const latestSaveableEntry = computed(() => {
-  const unsaved = entries.value.filter(e => !e.saved)
-  // Find the most recent one that is complete (no missing required fields)
-  for (let i = unsaved.length - 1; i >= 0; i--) {
-    const entry = unsaved[i]
-    if (getMissingFieldKeys(entry.activity).length === 0) {
-      return entry
-    }
-  }
-  return null
-})
-
-// Get the latest unsaved entry (for quick edit in chat)
-const latestEditableEntry = computed(() => {
-  const unsaved = entries.value.filter(e => !e.saved)
-  return unsaved.length > 0 ? unsaved[unsaved.length - 1] : null
-})
-
-// Build combined follow-up question for ALL missing fields
-const getNextFollowUpQuestion = (activity: Activity): { question: string; missingFields: string[] } | null => {
-  const missingKeys = getMissingFieldKeys(activity)
-  if (missingKeys.length === 0) return null
-
-  // Question fragments for each field
-  const questionParts: Record<string, string> = {
-    auftraggeber: 'welcher Auftraggeber',
-    thema: 'welches Thema',
-    minuten: 'wie lange'
-  }
-
-  let question: string
-  if (missingKeys.length === 1) {
-    const field = REQUIRED_FIELDS.find(f => f.key === missingKeys[0])
-    question = field?.question || `Was ist ${missingKeys[0]}?`
-  } else {
-    // Combine: "Welcher Auftraggeber und wie lange?"
-    const parts = missingKeys.map(k => questionParts[k] || k)
-    const lastPart = parts.pop()
-    question = parts.length > 0
-      ? `${parts.join(', ')} und ${lastPart}?`
-      : `${lastPart}?`
-    // Capitalize first letter
-    question = question.charAt(0).toUpperCase() + question.slice(1)
-  }
-
-  return {
-    question,
-    missingFields: missingKeys
-  }
-}
-
-// Follow-up state
-const followUpEntry = ref<ActivityEntry | null>(null)
-const currentFollowUpQuestion = ref<string | null>(null)
-
-// TTS - speak follow-up questions
-// Keep reference to prevent garbage collection
-let currentAudio: HTMLAudioElement | null = null
-
-const speakQuestion = async (question: string): Promise<void> => {
-  try {
-    // Check if TTS is enabled in settings
-    const settings = await window.api?.config.getSettings()
-    if (!settings?.ttsEnabled) {
-      console.log('[TTS] Disabled in settings')
-      return
-    }
-
-    const isReady = await window.api?.tts.isReady()
-    if (!isReady) {
-      console.log('[TTS] Not ready (no API key)')
-      return
-    }
-
-    const audioData = await window.api?.tts.speak(question, settings.ttsVoice)
-    console.log('[TTS] Received audio data:', audioData?.length, 'bytes')
-
-    if (audioData && audioData.length > 0) {
-      // Stop any currently playing audio
-      if (currentAudio) {
-        currentAudio.pause()
-        currentAudio = null
-      }
-
-      // Convert Uint8Array to Blob (cast needed for TS compatibility)
-      const blob = new Blob([audioData as unknown as BlobPart], { type: 'audio/mpeg' })
-      console.log('[TTS] Created blob:', blob.size, 'bytes, type:', blob.type)
-
-      const url = URL.createObjectURL(blob)
-      console.log('[TTS] Blob URL:', url)
-
-      currentAudio = new Audio(url)
-      currentAudio.volume = 1.0
-
-      console.log('[TTS] Audio element created, readyState:', currentAudio.readyState)
-
-      // Clean up blob URL when done
-      currentAudio.onended = () => {
-        console.log('[TTS] Audio ended')
-        URL.revokeObjectURL(url)
-        currentAudio = null
-      }
-
-      currentAudio.onerror = (e) => {
-        console.error('[TTS] Audio playback error:', e, currentAudio?.error)
-        URL.revokeObjectURL(url)
-        currentAudio = null
-      }
-
-      currentAudio.oncanplay = () => {
-        console.log('[TTS] Audio can play, duration:', currentAudio?.duration)
-      }
-
-      currentAudio.onplay = () => {
-        console.log('[TTS] Audio play event fired')
-      }
-
-      try {
-        await currentAudio.play()
-        console.log('[TTS] play() resolved successfully')
-      } catch (playError) {
-        console.error('[TTS] play() failed:', playError)
-      }
-    } else {
-      console.warn('[TTS] No audio data received')
-    }
-  } catch (err) {
-    console.error('[TTS] Failed to speak:', err)
-    // Non-blocking - continue without TTS
-  }
+  recordingStore.reset()
 }
 
 // Open Excel file in system default application
@@ -502,41 +204,33 @@ const handleOpenFile = async (filePath: string): Promise<void> => {
 const handleSaveEntry = async (entry: ActivityEntry): Promise<void> => {
   console.log('Saving entry:', entry)
 
-  // toRaw() needed to remove Vue proxy for IPC serialization
   const result = await window.api?.excel.saveActivity(toRaw(entry.activity))
 
   if (result?.success) {
-    entry.saved = true
-    entry.savedFilePath = result.filePath
-    addMessage({
-      type: 'assistant',
-      content: `✅ Aktivität "${entry.activity.beschreibung}" wurde gespeichert.`,
-      filePath: result.filePath
-    })
+    activityStore.markSaved(entry.id, result.filePath!)
+    chatStore.addAssistantMessage(
+      `\u2705 Aktivität "${entry.activity.beschreibung}" wurde gespeichert.`,
+      undefined,
+      result.filePath
+    )
   } else {
-    addMessage({
-      type: 'error',
-      content: `Speichern fehlgeschlagen: ${result?.error || 'Unbekannter Fehler'}`
-    })
+    chatStore.addErrorMessage(`Speichern fehlgeschlagen: ${result?.error || 'Unbekannter Fehler'}`)
   }
 }
 
 const handleEditEntry = (entry: ActivityEntry): void => {
-  editingEntry.value = entry
-  showRecording.value = true
+  recordingStore.startEditing(entry.id)
+  recordingStore.showOverlay()
   console.log('Editing entry via voice:', entry)
 }
 
 const handleDeleteEntry = (entry: ActivityEntry): void => {
-  const index = entries.value.findIndex(e => e.id === entry.id)
-  if (index !== -1) {
-    entries.value.splice(index, 1)
-  }
+  activityStore.deleteEntry(entry.id)
 }
 
 // Handle Enter key to start recording
 const handleKeyDown = (e: KeyboardEvent): void => {
-  if (e.key === 'Enter' && !showRecording.value && !isProcessing.value && whisperStatus.value === 'ready') {
+  if (e.key === 'Enter' && !recordingStore.showRecordingOverlay && !recordingStore.isProcessing && whisperStatus.value === 'ready') {
     // Don't trigger if user is typing in an input field
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
     e.preventDefault()
@@ -549,7 +243,8 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeyDown)
   initWhisper()
   loadActiveFiles()
-  loadDrafts()
+  await loadDrafts()
+  setupAutoSave()
 })
 
 onUnmounted(() => {
@@ -632,10 +327,10 @@ onUnmounted(() => {
         >
           Liste
           <span
-            v-if="unsavedCount > 0"
+            v-if="activityStore.unsavedCount > 0"
             class="absolute -top-1 -right-1 w-5 h-5 bg-yellow-500 text-white text-xs rounded-full flex items-center justify-center"
           >
-            {{ unsavedCount }}
+            {{ activityStore.unsavedCount }}
           </span>
         </button>
         <button
@@ -670,7 +365,7 @@ onUnmounted(() => {
     <div v-if="currentView === 'record'" ref="chatContainer" class="flex-1 overflow-y-auto p-4 space-y-4">
       <!-- Empty State -->
       <div
-        v-if="messages.length === 0 && !showRecording && !isProcessing"
+        v-if="chatStore.messages.length === 0 && !recordingStore.showRecordingOverlay && !recordingStore.isProcessing"
         class="h-full flex flex-col items-center justify-center text-gray-500"
       >
         <svg class="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -681,7 +376,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Messages -->
-      <template v-for="msg in messages" :key="msg.id">
+      <template v-for="msg in chatStore.messages" :key="msg.id">
         <!-- User Message (Transcription) -->
         <div v-if="msg.type === 'user'" class="flex justify-end">
           <div class="max-w-[80%]">
@@ -778,11 +473,11 @@ onUnmounted(() => {
       </template>
 
       <!-- Processing Indicator -->
-      <div v-if="isProcessing" class="flex justify-start">
+      <div v-if="recordingStore.isProcessing" class="flex justify-start">
         <div class="bg-white border rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
           <div class="flex items-center gap-2 text-sm text-gray-600">
             <span class="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
-            {{ processingStep === 'transcribing' ? 'Transkribiere...' : 'Analysiere...' }}
+            {{ recordingStore.processingStep === 'transcribing' ? 'Transkribiere...' : 'Analysiere...' }}
           </div>
         </div>
       </div>
@@ -791,7 +486,7 @@ onUnmounted(() => {
     <!-- List View -->
     <div v-else-if="currentView === 'list'" class="flex-1 overflow-y-auto p-4">
       <ActivityList
-        :entries="entries"
+        :entries="activityStore.entries"
         @save="handleSaveEntry"
         @edit="handleEditEntry"
         @delete="handleDeleteEntry"
@@ -811,7 +506,7 @@ onUnmounted(() => {
 
     <!-- Recording Overlay -->
     <RecordingWindow
-      v-if="showRecording"
+      v-if="recordingStore.showRecordingOverlay"
       :auto-start="true"
       :editing-context="editingContextText"
       @recorded="handleRecorded"
@@ -822,25 +517,25 @@ onUnmounted(() => {
     <!-- Input Area (only in record view) -->
     <div v-if="currentView === 'record'" class="bg-white border-t p-4 space-y-2">
       <!-- Quick Actions for latest unsaved entry -->
-      <div v-if="latestEditableEntry" class="flex gap-2">
+      <div v-if="activityStore.latestEditableEntry" class="flex gap-2">
         <!-- Quick Save Button (only if entry is complete) -->
         <button
-          v-if="latestSaveableEntry && latestSaveableEntry.id === latestEditableEntry.id"
-          @click="handleSaveEntry(latestSaveableEntry)"
+          v-if="activityStore.latestSaveableEntry && activityStore.latestSaveableEntry.id === activityStore.latestEditableEntry.id"
+          @click="handleSaveEntry(activityStore.latestSaveableEntry)"
           class="flex-1 flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-medium py-2.5 px-4 rounded-xl transition-colors"
         >
           <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
           </svg>
-          <span class="truncate">Speichern: {{ latestSaveableEntry.activity.beschreibung.substring(0, 25) }}{{ latestSaveableEntry.activity.beschreibung.length > 25 ? '...' : '' }}</span>
+          <span class="truncate">Speichern: {{ activityStore.latestSaveableEntry.activity.beschreibung.substring(0, 25) }}{{ activityStore.latestSaveableEntry.activity.beschreibung.length > 25 ? '...' : '' }}</span>
         </button>
 
         <!-- Quick Edit Button -->
         <button
-          @click="handleEditEntry(latestEditableEntry)"
+          @click="handleEditEntry(activityStore.latestEditableEntry)"
           :class="[
             'flex items-center justify-center gap-2 font-medium py-2.5 px-4 rounded-xl transition-colors',
-            latestSaveableEntry && latestSaveableEntry.id === latestEditableEntry.id
+            activityStore.latestSaveableEntry && activityStore.latestSaveableEntry.id === activityStore.latestEditableEntry.id
               ? 'bg-amber-100 hover:bg-amber-200 text-amber-700'
               : 'flex-1 bg-amber-500 hover:bg-amber-600 text-white'
           ]"
@@ -854,7 +549,7 @@ onUnmounted(() => {
 
       <button
         @click="handleStartRecording"
-        :disabled="whisperStatus !== 'ready' || isProcessing"
+        :disabled="whisperStatus !== 'ready' || recordingStore.isProcessing"
         class="w-full flex items-center justify-center gap-3 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-3 px-6 rounded-xl transition-colors"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

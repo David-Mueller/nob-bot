@@ -1,24 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-
-type Activity = {
-  auftraggeber: string | null
-  thema: string | null
-  beschreibung: string
-  minuten: number | null
-  km: number
-  auslagen: number
-  datum: string | null
-}
-
-type ActivityEntry = {
-  id: number
-  activity: Activity
-  transcript: string
-  timestamp: Date
-  saved: boolean
-  savedFilePath?: string
-}
+import type { Activity, ActivityEntry } from '@shared/types'
 
 const props = defineProps<{
   entries: ActivityEntry[]

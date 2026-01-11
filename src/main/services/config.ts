@@ -4,34 +4,14 @@ import { readFile, writeFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import YAML from 'yaml'
 import { storeApiKey, retrieveApiKey, hasStoredApiKey } from './secureStorage'
+import type { XlsxFileConfig, AppSettings, AppConfig } from '@shared/types'
+
+// Re-export types for consumers that import from this module
+export type { XlsxFileConfig, AppSettings, AppConfig }
 
 // Config file location: ~/.aktivitaeten/config.yaml
 const CONFIG_DIR = join(app.getPath('home'), '.aktivitaeten')
 const CONFIG_FILE = join(CONFIG_DIR, 'config.yaml')
-
-export type XlsxFileConfig = {
-  path: string
-  auftraggeber: string
-  jahr: number
-  active: boolean
-}
-
-export type AppSettings = {
-  hotkey: string
-  openaiApiKey: string
-  whisperModel: 'tiny' | 'base' | 'small'
-  ttsEnabled: boolean
-  ttsVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
-}
-
-export type AppConfig = {
-  // Base path pattern for scanning XLSX files
-  xlsxBasePath: string
-  // List of known XLSX files with their status
-  xlsxFiles: XlsxFileConfig[]
-  // App settings
-  settings: AppSettings
-}
 
 const DEFAULT_SETTINGS: AppSettings = {
   hotkey: 'CommandOrControl+Shift+R',

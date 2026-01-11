@@ -1,6 +1,10 @@
 import * as XLSX from 'xlsx'
 import { createBackup } from './backup'
 import { validateExcelFile } from './excel'
+import type { GlossarKategorie, GlossarEintrag, Glossar } from '@shared/types'
+
+// Re-export types for consumers that import from this module
+export type { GlossarKategorie, GlossarEintrag, Glossar }
 
 /**
  * Glossar service for standardizing terms from Excel sheets.
@@ -12,20 +16,6 @@ const MONTH_NAMES = [
   'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
 ]
-
-export type GlossarKategorie = 'Auftraggeber' | 'Thema' | 'Kunde' | 'Sonstiges'
-
-export type GlossarEintrag = {
-  kategorie: GlossarKategorie
-  begriff: string           // Standardized spelling
-  synonyme: string[]        // Alternative spellings
-}
-
-export type Glossar = {
-  eintraege: GlossarEintrag[]
-  byKategorie: Map<GlossarKategorie, GlossarEintrag[]>
-  lookupMap: Map<string, string>  // synonym (lowercase) -> begriff
-}
 
 // Cache for loaded glossars
 const glossarCache = new Map<string, Glossar>()
@@ -180,22 +170,31 @@ export function getAllKnownTerms(glossar: Glossar): {
 /**
  * Load glossar from all active Excel files and merge them.
  * Returns a combined glossar with entries from all files.
+ * Uses parallel loading for better performance.
  */
 export async function loadGlossarsFromPaths(paths: string[]): Promise<Glossar | null> {
-  const glossars: Glossar[] = []
+  // Parallel loading - errors in one file don't block others
+  const glossarPromises = paths.map((path) =>
+    loadGlossar(path).catch((err) => {
+      console.error(`[Glossar] Failed to load ${path}:`, err)
+      return null
+    })
+  )
 
-  for (const path of paths) {
-    const glossar = await loadGlossar(path)
-    if (glossar) {
-      glossars.push(glossar)
-    }
-  }
+  const results = await Promise.all(glossarPromises)
+  const glossars = results.filter((g): g is Glossar => g !== null)
 
   if (glossars.length === 0) {
     return null
   }
 
-  // Merge all glossars
+  return mergeGlossars(glossars)
+}
+
+/**
+ * Merge multiple glossars into one.
+ */
+function mergeGlossars(glossars: Glossar[]): Glossar {
   const merged: Glossar = {
     eintraege: [],
     byKategorie: new Map(),
