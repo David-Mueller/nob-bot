@@ -36,7 +36,8 @@ function mapToExcelActivity(llmActivity: LLMActivity): ExcelActivity {
     datum: llmActivity.datum || new Date().toISOString().split('T')[0],
     thema: llmActivity.thema || 'Unbekannt',
     taetigkeit: llmActivity.beschreibung,
-    zeit: llmActivity.minuten,
+    // Convert minutes to hours (Excel service expects hours)
+    zeit: llmActivity.minuten !== null ? llmActivity.minuten / 60 : null,
     km: llmActivity.km ?? 0,
     hotel: llmActivity.auslagen ?? 0
   }
