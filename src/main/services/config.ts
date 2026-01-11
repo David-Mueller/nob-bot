@@ -3,6 +3,7 @@ import { join } from 'path'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import YAML from 'yaml'
+import { storeApiKey, retrieveApiKey, hasStoredApiKey } from './secureStorage'
 
 // Config file location: ~/.aktivitaeten/config.yaml
 const CONFIG_DIR = join(app.getPath('home'), '.aktivitaeten')
@@ -63,7 +64,25 @@ export async function loadConfig(): Promise<AppConfig> {
       xlsxFiles: parsed.xlsxFiles || [],
       settings: {
         ...DEFAULT_SETTINGS,
-        ...parsed.settings
+        ...parsed.settings,
+        openaiApiKey: '' // Never load API key from YAML into memory
+      }
+    }
+
+    // Migrate plaintext API key to secure storage if present
+    if (parsed.settings?.openaiApiKey) {
+      const hasSecureKey = await hasStoredApiKey()
+      if (!hasSecureKey) {
+        console.log('[Config] Migrating API key to secure storage...')
+        await storeApiKey(parsed.settings.openaiApiKey)
+        // Remove plaintext key from config file
+        parsed.settings.openaiApiKey = ''
+        const cleanedContent = YAML.stringify({
+          ...parsed,
+          settings: { ...parsed.settings, openaiApiKey: undefined }
+        })
+        await writeFile(CONFIG_FILE, cleanedContent, 'utf-8')
+        console.log('[Config] API key migrated and removed from config.yaml')
       }
     }
 
@@ -82,7 +101,16 @@ export async function saveConfig(config: AppConfig): Promise<void> {
       await mkdir(CONFIG_DIR, { recursive: true })
     }
 
-    const content = YAML.stringify(config)
+    // Never save API key to YAML - strip it before writing
+    const configToSave = {
+      ...config,
+      settings: {
+        ...config.settings,
+        openaiApiKey: undefined // Exclude from YAML
+      }
+    }
+
+    const content = YAML.stringify(configToSave)
     await writeFile(CONFIG_FILE, content, 'utf-8')
 
     currentConfig = config
@@ -149,6 +177,13 @@ export function getSettings(): AppSettings {
 }
 
 export async function updateSettings(updates: Partial<AppSettings>): Promise<AppSettings> {
+  // Handle API key separately via secure storage
+  if (updates.openaiApiKey !== undefined) {
+    await storeApiKey(updates.openaiApiKey)
+    console.log('[Config] API key updated in secure storage')
+    delete updates.openaiApiKey // Don't store in config object
+  }
+
   currentConfig.settings = {
     ...currentConfig.settings,
     ...updates
@@ -158,7 +193,8 @@ export async function updateSettings(updates: Partial<AppSettings>): Promise<App
   return currentConfig.settings
 }
 
-export function getApiKey(): string {
-  // First check settings, then fall back to environment variable
-  return currentConfig.settings.openaiApiKey || process.env.OPENAI_API_KEY || ''
+export async function getApiKey(): Promise<string> {
+  // First check secure storage, then fall back to environment variable
+  const storedKey = await retrieveApiKey()
+  return storedKey || process.env.OPENAI_API_KEY || ''
 }

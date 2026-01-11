@@ -17,7 +17,7 @@ export async function speak(
   text: string,
   voice: TTSVoice = 'nova'
 ): Promise<ArrayBuffer> {
-  const apiKey = getApiKey()
+  const apiKey = await getApiKey()
 
   if (!apiKey) {
     throw new Error('OpenAI API key not configured')
@@ -54,6 +54,7 @@ export async function speak(
 /**
  * Check if TTS is available (API key present).
  */
-export function isTTSReady(): boolean {
-  return !!getApiKey()
+export async function isTTSReady(): Promise<boolean> {
+  const apiKey = await getApiKey()
+  return !!apiKey
 }

@@ -13,7 +13,7 @@ export function registerTTSHandlers(): void {
   )
 
   // Check if TTS is ready (API key present)
-  ipcMain.handle('tts:isReady', (): boolean => {
-    return isTTSReady()
+  ipcMain.handle('tts:isReady', async (): Promise<boolean> => {
+    return await isTTSReady()
   })
 }

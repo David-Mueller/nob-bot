@@ -87,8 +87,8 @@ let llm: ChatOpenAI | null = null
 // gpt-4.1-mini struggles with self-corrections like "ach nein, es war für X"
 const DEFAULT_MODEL = 'gpt-4o'
 
-export function initLLM(): void {
-  const apiKey = getApiKey()
+export async function initLLM(): Promise<void> {
+  const apiKey = await getApiKey()
   if (!apiKey) {
     throw new Error('OPENAI_API_KEY not found in settings or environment')
   }
@@ -109,7 +109,7 @@ export async function parseActivity(
   themes: string[] = []
 ): Promise<Activity> {
   if (!llm) {
-    initLLM()
+    await initLLM()
   }
 
   if (!llm) {
@@ -147,8 +147,9 @@ export async function parseActivity(
   } as Activity
 }
 
-export function isLLMReady(): boolean {
-  return llm !== null || !!process.env.OPENAI_API_KEY
+export async function isLLMReady(): Promise<boolean> {
+  const apiKey = await getApiKey()
+  return llm !== null || !!apiKey
 }
 
 const CORRECTION_PROMPT = `Du bist ein Assistent zur Korrektur von Arbeitsaktivitäten.
@@ -255,7 +256,7 @@ export async function parseFollowUpAnswer(
   themes: string[] = []
 ): Promise<Activity> {
   if (!llm) {
-    initLLM()
+    await initLLM()
   }
 
   if (!llm) {
@@ -310,7 +311,7 @@ export async function parseCorrection(
   clients: string[] = []
 ): Promise<Activity> {
   if (!llm) {
-    initLLM()
+    await initLLM()
   }
 
   if (!llm) {

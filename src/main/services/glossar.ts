@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx'
 import { createBackup } from './backup'
+import { validateExcelFile } from './excel'
 
 /**
  * Glossar service for standardizing terms from Excel sheets.
@@ -47,6 +48,9 @@ export async function loadGlossar(xlsxPath: string): Promise<Glossar | null> {
   }
 
   try {
+    // Validate file before processing
+    await validateExcelFile(xlsxPath)
+
     const workbook = XLSX.readFile(xlsxPath, { cellStyles: false })
 
     // Look for "Glossar" sheet (case-insensitive)
@@ -255,6 +259,9 @@ export async function createGlossarSheet(
   auftraggeber: string
 ): Promise<Glossar | null> {
   try {
+    // Validate file before processing
+    await validateExcelFile(xlsxPath)
+
     // Create backup before modifying
     await createBackup(xlsxPath)
 

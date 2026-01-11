@@ -118,7 +118,7 @@ export function registerLLMHandlers(): void {
   )
 
   // Check if LLM is ready (API key present)
-  ipcMain.handle('llm:isReady', (): boolean => {
-    return isLLMReady()
+  ipcMain.handle('llm:isReady', async (): Promise<boolean> => {
+    return await isLLMReady()
   })
 }

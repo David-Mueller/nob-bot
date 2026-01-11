@@ -48,13 +48,13 @@ export function registerWhisperHandlers(mainWindow: BrowserWindow): void {
   )
 
   // Get current whisper mode
-  ipcMain.handle('whisper:getMode', (): WhisperMode => {
-    return getWhisperMode()
+  ipcMain.handle('whisper:getMode', async (): Promise<WhisperMode> => {
+    return await getWhisperMode()
   })
 
   // Check if Whisper is ready
-  ipcMain.handle('whisper:isReady', (): boolean => {
-    return isWhisperReady()
+  ipcMain.handle('whisper:isReady', async (): Promise<boolean> => {
+    return await isWhisperReady()
   })
 
   // Check if Whisper is loading

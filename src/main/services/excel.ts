@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import { stat } from 'fs/promises'
 import { createBackup } from './backup'
 
 /**
@@ -6,6 +7,26 @@ import { createBackup } from './backup'
  * Preserves styles, formulas, and formatting.
  * Automatic backup on every write operation.
  */
+
+// Security: Maximum file size (50MB) to prevent DoS
+const MAX_FILE_SIZE = 50 * 1024 * 1024
+
+/**
+ * Validate Excel file before processing.
+ * Checks file size and extension for security.
+ */
+export async function validateExcelFile(filePath: string): Promise<void> {
+  // Check file extension
+  if (!filePath.match(/\.(xlsx|xls)$/i)) {
+    throw new Error('Invalid file extension. Only .xlsx and .xls files are allowed.')
+  }
+
+  // Check file size
+  const stats = await stat(filePath)
+  if (stats.size > MAX_FILE_SIZE) {
+    throw new Error(`File too large: ${(stats.size / 1024 / 1024).toFixed(1)}MB (max ${MAX_FILE_SIZE / 1024 / 1024}MB)`)
+  }
+}
 
 export type Activity = {
   datum: string
@@ -45,6 +66,9 @@ export async function addActivity(
   filePath: string,
   activity: Activity
 ): Promise<void> {
+  // Validate file before processing
+  await validateExcelFile(filePath)
+
   // Create backup BEFORE any modifications
   await createBackup(filePath)
 
@@ -164,6 +188,9 @@ export async function updateRow(
   rowNumber: number,
   values: Record<number, unknown>
 ): Promise<void> {
+  // Validate file before processing
+  await validateExcelFile(filePath)
+
   await createBackup(filePath)
 
   const workbook = XLSX.readFile(filePath, READ_OPTIONS)
@@ -201,6 +228,9 @@ export async function getActivities(
   filePath: string,
   month: number // 0-11
 ): Promise<Array<Activity & { row: number }>> {
+  // Validate file before processing
+  await validateExcelFile(filePath)
+
   const workbook = XLSX.readFile(filePath, READ_OPTIONS)
   const sheetName = MONTH_NAMES[month]
   const sheet = workbook.Sheets[sheetName]

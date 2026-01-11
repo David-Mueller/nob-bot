@@ -41,10 +41,10 @@ export type ProgressCallback = (progress: {
 /**
  * Initialize OpenAI client for cloud transcription
  */
-function initOpenAI(): OpenAI | null {
+async function initOpenAI(): Promise<OpenAI | null> {
   if (openaiClient) return openaiClient
 
-  const apiKey = getApiKey()
+  const apiKey = await getApiKey()
   if (!apiKey) {
     console.log('[Whisper] No OpenAI API key - cloud mode unavailable')
     return null
@@ -89,7 +89,7 @@ export async function initLocalWhisper(
  * Transcribe using OpenAI Whisper API (cloud)
  */
 async function transcribeCloud(audioBuffer: ArrayBuffer): Promise<TranscriptionResult> {
-  const client = initOpenAI()
+  const client = await initOpenAI()
   if (!client) {
     throw new Error('OpenAI client not available')
   }
@@ -215,7 +215,8 @@ export async function transcribe(
   audioData: Float32Array | ArrayBuffer,
   originalBlob?: ArrayBuffer
 ): Promise<TranscriptionResult> {
-  const hasApiKey = !!process.env.OPENAI_API_KEY
+  const apiKey = await getApiKey()
+  const hasApiKey = !!apiKey
 
   // Try cloud first if we have API key
   if (hasApiKey && originalBlob) {
@@ -245,22 +246,24 @@ export async function initWhisper(
   onProgress?: ProgressCallback
 ): Promise<void> {
   // Initialize OpenAI client
-  initOpenAI()
+  await initOpenAI()
 
   // Also preload local model as fallback
   await initLocalWhisper(model, onProgress)
 }
 
-export function isWhisperReady(): boolean {
-  return localTranscriber !== null || !!process.env.OPENAI_API_KEY
+export async function isWhisperReady(): Promise<boolean> {
+  const apiKey = await getApiKey()
+  return localTranscriber !== null || !!apiKey
 }
 
 export function isWhisperLoading(): boolean {
   return isLoadingLocal
 }
 
-export function getWhisperMode(): WhisperMode {
-  if (process.env.OPENAI_API_KEY) return 'cloud'
+export async function getWhisperMode(): Promise<WhisperMode> {
+  const apiKey = await getApiKey()
+  if (apiKey) return 'cloud'
   if (localTranscriber) return 'local'
   return 'none'
 }
