@@ -37,7 +37,7 @@
 |----|-------|------|--------|
 | FEAT-001 | Project Setup | - | ✅ Done |
 | FEAT-002 | Global Hotkey | - | ✅ Done |
-| FEAT-018 | UX Verbesserungen | - | ✅ Done |
+| FEAT-018 | UX Verbesserungen | [Spec](specs/FEAT-018-ux-improvements.md) | ✅ Done |
 | FEAT-003 | Audio Recording | - | ✅ Done |
 | FEAT-004 | Whisper Integration | - | ✅ Done |
 | FEAT-005 | LLM Integration | - | ✅ Done |
