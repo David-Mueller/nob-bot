@@ -1,5 +1,5 @@
 import { config } from 'dotenv';
-import { app, BrowserWindow, shell, nativeImage } from 'electron';
+import { app, BrowserWindow, shell, nativeImage, globalShortcut } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { registerHotkeys, unregisterHotkeys } from './hotkey';
@@ -94,6 +94,14 @@ app.whenReady().then(async () => {
     console.error('[Startup] Glossar load failed:', err);
   });
 
+  // DevTools shortcut (Ctrl+Shift+I / Cmd+Option+I)
+  globalShortcut.register('CommandOrControl+Shift+I', () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    if (focusedWindow) {
+      focusedWindow.webContents.toggleDevTools();
+    }
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -103,6 +111,7 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   unregisterHotkeys();
+  globalShortcut.unregisterAll();
 });
 
 app.on('window-all-closed', () => {

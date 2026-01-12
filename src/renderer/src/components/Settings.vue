@@ -4,7 +4,6 @@ import { ref, onMounted, toRaw } from 'vue'
 type AppSettings = {
   hotkey: string
   openaiApiKey: string
-  whisperModel: 'tiny' | 'base' | 'small'
   ttsEnabled: boolean
   ttsVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
 }
@@ -12,7 +11,6 @@ type AppSettings = {
 const settings = ref<AppSettings>({
   hotkey: 'CommandOrControl+Shift+R',
   openaiApiKey: '',
-  whisperModel: 'base',
   ttsEnabled: false,
   ttsVoice: 'nova'
 })
@@ -110,24 +108,6 @@ onMounted(() => {
       </p>
     </div>
 
-    <!-- Whisper Model -->
-    <div class="space-y-2">
-      <label class="block text-sm font-medium text-gray-700">
-        Whisper Modell (Lokal)
-      </label>
-      <select
-        v-model="settings.whisperModel"
-        class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-      >
-        <option value="tiny">Tiny (~75MB, schnell)</option>
-        <option value="base">Base (~150MB, empfohlen)</option>
-        <option value="small">Small (~500MB, beste Qualität)</option>
-      </select>
-      <p class="text-xs text-gray-500">
-        Modell für lokale Transkription. Größere Modelle sind genauer aber langsamer.
-      </p>
-    </div>
-
     <!-- TTS Settings -->
     <div class="space-y-4 p-4 bg-gray-50 rounded-lg">
       <div class="flex items-center justify-between">
@@ -197,7 +177,7 @@ onMounted(() => {
       <ul class="list-disc list-inside space-y-1">
         <li>Hotkey-Änderungen erfordern einen Neustart der App</li>
         <li>API-Key wird sicher in der Konfigurationsdatei gespeichert</li>
-        <li>Cloud-Transkription ist schneller und genauer als lokal</li>
+        <li>Transkription erfordert eine Internetverbindung</li>
       </ul>
     </div>
   </div>

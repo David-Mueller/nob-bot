@@ -45,6 +45,9 @@ const loadActiveFiles = async (): Promise<void> => {
   const files = await window.api?.config.getActiveFiles() || []
   activeFileCount.value = files.length
   activeClients.value = [...new Set(files.map(f => f.auftraggeber))]
+
+  // Reload glossar when files change
+  await window.api?.glossar.load()
 }
 
 // Editing/follow-up context for voice input
@@ -496,7 +499,7 @@ onUnmounted(() => {
 
     <!-- Files View -->
     <div v-else-if="currentView === 'files'" class="flex-1 overflow-y-auto">
-      <DateiManager />
+      <DateiManager @files-changed="loadActiveFiles" />
     </div>
 
     <!-- Settings View -->

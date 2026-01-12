@@ -10,10 +10,8 @@ type ProgressCallback = (progress: {
 
 type TranscriptionResult = {
   text: string
-  chunks?: Array<{
-    text: string
-    timestamp: [number, number]
-  }>
+  language?: string
+  mode: WhisperMode
 }
 
 type ScannedFile = {
@@ -34,8 +32,8 @@ const api = {
 
   // Whisper API
   whisper: {
-    init: (model?: string): Promise<void> => {
-      return ipcRenderer.invoke('whisper:init', model)
+    init: (): Promise<void> => {
+      return ipcRenderer.invoke('whisper:init')
     },
     transcribe: (pcmBuffer: ArrayBuffer, originalBlob?: ArrayBuffer): Promise<TranscriptionResult> => {
       return ipcRenderer.invoke('whisper:transcribe', pcmBuffer, originalBlob)

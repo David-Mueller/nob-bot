@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 
+const emit = defineEmits<{
+  filesChanged: []
+}>()
+
 type XlsxFileConfig = {
   path: string
   auftraggeber: string
@@ -91,12 +95,21 @@ const scanFiles = async (): Promise<void> => {
           missing: false
         })
       } else {
-        // New file - use scanned values
+        // New file - use scanned values and save to config immediately
+        const auftraggeber = f.auftraggeber || ''
+        const jahr = f.jahr || new Date().getFullYear()
+
+        await window.api?.config.updateFile(f.path, {
+          auftraggeber,
+          jahr,
+          active: false
+        })
+
         merged.push({
           path: f.path,
           filename: f.filename,
-          auftraggeber: f.auftraggeber || '',
-          jahr: f.jahr || new Date().getFullYear(),
+          auftraggeber,
+          jahr,
           active: false,
           isNew: true,
           missing: false
@@ -176,6 +189,9 @@ const toggleActive = async (file: MergedFile): Promise<void> => {
 
   // Clear any pending edits
   delete editedValues.value[file.path]
+
+  // Notify parent that files changed
+  emit('filesChanged')
 }
 
 const saveFile = async (file: MergedFile): Promise<void> => {

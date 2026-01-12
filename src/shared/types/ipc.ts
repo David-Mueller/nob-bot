@@ -4,6 +4,6 @@ export type SaveResult = {
   filePath?: string
 }
 
-export type WhisperMode = 'cloud' | 'local' | 'none'
+export type WhisperMode = 'cloud' | 'none'
 
 export type ProgressCallback = (progress: number) => void

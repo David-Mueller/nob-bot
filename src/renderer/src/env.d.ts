@@ -19,14 +19,10 @@ type TranscriptionResult = {
   text: string
   language?: string
   mode: WhisperMode
-  chunks?: Array<{
-    text: string
-    timestamp: [number, number]
-  }>
 }
 
 type WhisperAPI = {
-  init: (model?: string) => Promise<void>
+  init: () => Promise<void>
   transcribe: (pcmBuffer: ArrayBuffer, originalBlob?: ArrayBuffer) => Promise<TranscriptionResult>
   isReady: () => Promise<boolean>
   isLoading: () => Promise<boolean>

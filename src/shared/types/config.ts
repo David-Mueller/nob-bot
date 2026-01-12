@@ -8,7 +8,6 @@ export type XlsxFileConfig = {
 export type AppSettings = {
   hotkey: string
   openaiApiKey: string
-  whisperModel: 'tiny' | 'base' | 'small'
   ttsEnabled: boolean
   ttsVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
 }

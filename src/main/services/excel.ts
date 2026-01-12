@@ -1,10 +1,10 @@
-import * as XLSX from 'xlsx'
-import { stat } from 'fs/promises'
+import ExcelJS from 'exceljs'
+import { stat, writeFile, readFile } from 'fs/promises'
 import { createBackup } from './backup'
 
 /**
- * Excel service using SheetJS (xlsx) for better Excel compatibility.
- * Preserves styles, formulas, and formatting.
+ * Excel service using ExcelJS for full style preservation.
+ * Preserves all formatting: backgrounds, borders, text wrap, fonts, etc.
  * Automatic backup on every write operation.
  */
 
@@ -42,25 +42,9 @@ const MONTH_NAMES = [
   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
 ]
 
-// Read options to preserve styles, formulas, and formatting
-const READ_OPTIONS: XLSX.ParsingOptions = {
-  cellStyles: true,    // Preserve cell styles
-  cellFormula: true,   // Preserve formulas
-  cellDates: true,     // Parse dates properly
-  cellNF: true,        // Preserve number formats
-  sheetStubs: true     // Create stubs for empty cells (preserves structure)
-}
-
-// Write options to preserve everything
-const WRITE_OPTIONS: XLSX.WritingOptions = {
-  cellStyles: true,    // Write cell styles
-  bookSST: true,       // Use shared string table (better compatibility)
-  compression: true    // Compress output
-}
-
 /**
  * Adds an activity to the appropriate month sheet.
- * Automatically creates a backup before saving.
+ * ExcelJS preserves all existing styles, only writes to new cells.
  */
 export async function addActivity(
   filePath: string,
@@ -72,153 +56,78 @@ export async function addActivity(
   // Create backup BEFORE any modifications
   await createBackup(filePath)
 
-  // Read workbook with full style/formula preservation
-  const workbook = XLSX.readFile(filePath, READ_OPTIONS)
+  // Load workbook via buffer (workaround for Windows async iterable issue)
+  const workbook = new ExcelJS.Workbook()
+  const fileBuffer = await readFile(filePath)
+  await workbook.xlsx.load(fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength))
 
   // Determine target sheet from date
   const date = new Date(activity.datum)
   const sheetName = MONTH_NAMES[date.getMonth()]
 
-  const sheet = workbook.Sheets[sheetName]
+  const sheet = workbook.getWorksheet(sheetName)
   if (!sheet) {
     throw new Error(`Sheet "${sheetName}" nicht gefunden`)
   }
 
-  // Get sheet range to find last row
-  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1')
+  // Find last row with actual content (Thema OR Tätigkeit filled)
+  // Rule: 6+ consecutive rows with empty Thema AND Tätigkeit = end of data
+  let lastContentRow = 7 // Default start row (1-based in ExcelJS)
+  let emptyContentStreak = 0
 
-  // Find last row with data (start from bottom)
-  let lastDataRow = 6 // Default if sheet is empty
-  for (let row = range.e.r; row >= 6; row--) {
-    const cellA = sheet[XLSX.utils.encode_cell({ r: row, c: 0 })]
-    const cellB = sheet[XLSX.utils.encode_cell({ r: row, c: 1 })]
-    const cellC = sheet[XLSX.utils.encode_cell({ r: row, c: 2 })]
-    if (cellA || cellB || cellC) {
-      lastDataRow = row
-      break
-    }
-  }
+  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber < 7) return // Skip header rows
 
-  const newRow = lastDataRow + 1
+    const themaCell = row.getCell(2) // Column B
+    const taetigkeitCell = row.getCell(3) // Column C
 
-  // Helper to copy style from template row
-  const copyStyleFromRow = (col: number): { s?: unknown; z?: string } => {
-    const templateCell = sheet[XLSX.utils.encode_cell({ r: lastDataRow, c: col })]
-    const result: { s?: unknown; z?: string } = {}
-    if (templateCell?.s !== undefined) result.s = templateCell.s
-    if (templateCell?.z !== undefined) result.z = templateCell.z
-    return result
-  }
+    const hasThema = themaCell.value && String(themaCell.value).trim().length > 0
+    const hasTaetigkeit = taetigkeitCell.value && String(taetigkeitCell.value).trim().length > 0
 
-  // Write cells - Column A: Date (with style from template)
-  const dateStyle = copyStyleFromRow(0)
-  sheet[XLSX.utils.encode_cell({ r: newRow, c: 0 })] = {
-    t: 'd',
-    v: date,
-    w: date.toLocaleDateString('de-DE'),
-    ...dateStyle
-  }
-
-  // Column B: Thema
-  const themaStyle = copyStyleFromRow(1)
-  sheet[XLSX.utils.encode_cell({ r: newRow, c: 1 })] = {
-    t: 's',
-    v: activity.thema,
-    ...themaStyle
-  }
-
-  // Column C: Tätigkeit
-  const taetigkeitStyle = copyStyleFromRow(2)
-  sheet[XLSX.utils.encode_cell({ r: newRow, c: 2 })] = {
-    t: 's',
-    v: activity.taetigkeit,
-    ...taetigkeitStyle
-  }
-
-  // Column D: Zeit (as time value: hours/24)
-  const zeitStyle = copyStyleFromRow(3)
-  if (activity.zeit !== null) {
-    const timeValue = activity.zeit / 24
-    const hours = Math.floor(activity.zeit)
-    const minutes = Math.round((activity.zeit - hours) * 60)
-    sheet[XLSX.utils.encode_cell({ r: newRow, c: 3 })] = {
-      t: 'n',
-      v: timeValue,
-      w: `${hours}:${minutes.toString().padStart(2, '0')}`,
-      ...zeitStyle
-    }
-  }
-
-  // Column E: KM
-  const kmStyle = copyStyleFromRow(4)
-  if (activity.km > 0) {
-    sheet[XLSX.utils.encode_cell({ r: newRow, c: 4 })] = {
-      t: 'n',
-      v: activity.km,
-      ...kmStyle
-    }
-  }
-
-  // Column F: Hotel/Auslagen
-  const hotelStyle = copyStyleFromRow(5)
-  if (activity.hotel > 0) {
-    sheet[XLSX.utils.encode_cell({ r: newRow, c: 5 })] = {
-      t: 'n',
-      v: activity.hotel,
-      ...hotelStyle
-    }
-  }
-
-  // Update sheet range to include new row
-  range.e.r = Math.max(range.e.r, newRow)
-  sheet['!ref'] = XLSX.utils.encode_range(range)
-
-  // Write file with style preservation
-  XLSX.writeFile(workbook, filePath, WRITE_OPTIONS)
-  console.log(`[Excel] Saved: ${filePath}`)
-}
-
-/**
- * Updates an existing row in the workbook.
- * Automatically creates a backup before saving.
- */
-export async function updateRow(
-  filePath: string,
-  sheetName: string,
-  rowNumber: number,
-  values: Record<number, unknown>
-): Promise<void> {
-  // Validate file before processing
-  await validateExcelFile(filePath)
-
-  await createBackup(filePath)
-
-  const workbook = XLSX.readFile(filePath, READ_OPTIONS)
-  const sheet = workbook.Sheets[sheetName]
-
-  if (!sheet) {
-    throw new Error(`Sheet "${sheetName}" nicht gefunden`)
-  }
-
-  // Update cells (rowNumber is 1-based, XLSX uses 0-based)
-  const row = rowNumber - 1
-  for (const [col, value] of Object.entries(values)) {
-    const colNum = Number(col) - 1 // Convert to 0-based
-    const cellAddr = XLSX.utils.encode_cell({ r: row, c: colNum })
-
-    if (value === null || value === undefined) {
-      delete sheet[cellAddr]
-    } else if (typeof value === 'number') {
-      sheet[cellAddr] = { t: 'n', v: value }
-    } else if (value instanceof Date) {
-      sheet[cellAddr] = { t: 'd', v: value }
+    if (hasThema || hasTaetigkeit) {
+      lastContentRow = rowNumber
+      emptyContentStreak = 0
     } else {
-      sheet[cellAddr] = { t: 's', v: String(value) }
+      emptyContentStreak++
+      if (emptyContentStreak >= 6) {
+        return // Stop searching
+      }
     }
+  })
+
+  const newRowNumber = lastContentRow + 1
+  const newRow = sheet.getRow(newRowNumber)
+
+  // Set values only - ExcelJS preserves existing styles automatically
+  // Column A (1): Date
+  newRow.getCell(1).value = date
+
+  // Column B (2): Thema
+  newRow.getCell(2).value = activity.thema
+
+  // Column C (3): Tätigkeit
+  newRow.getCell(3).value = activity.taetigkeit
+
+  // Column D (4): Zeit (as decimal hours for Excel time format)
+  if (activity.zeit !== null) {
+    // Convert hours to Excel time value (fraction of day)
+    newRow.getCell(4).value = activity.zeit / 24
   }
 
-  XLSX.writeFile(workbook, filePath, WRITE_OPTIONS)
-  console.log(`[Excel] Updated row ${rowNumber} in ${sheetName}`)
+  // Column E (5): KM
+  if (activity.km > 0) {
+    newRow.getCell(5).value = activity.km
+  }
+
+  // Column F (6): Hotel/Auslagen
+  if (activity.hotel > 0) {
+    newRow.getCell(6).value = activity.hotel
+  }
+
+  // Save workbook via buffer (workaround for Windows async iterable issue)
+  const outBuffer = await workbook.xlsx.writeBuffer()
+  await writeFile(filePath, Buffer.from(outBuffer))
+  console.log(`[Excel] Saved: ${filePath}`)
 }
 
 /**
@@ -231,59 +140,63 @@ export async function getActivities(
   // Validate file before processing
   await validateExcelFile(filePath)
 
-  const workbook = XLSX.readFile(filePath, READ_OPTIONS)
+  // Load workbook via buffer (workaround for Windows async iterable issue)
+  const workbook = new ExcelJS.Workbook()
+  const fileBuffer = await readFile(filePath)
+  await workbook.xlsx.load(fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength))
+
   const sheetName = MONTH_NAMES[month]
-  const sheet = workbook.Sheets[sheetName]
+  const sheet = workbook.getWorksheet(sheetName)
 
   if (!sheet) {
     return []
   }
 
   const activities: Array<Activity & { row: number }> = []
-  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1')
 
-  // Data typically starts at row 14 (0-based: 13)
-  for (let row = 13; row <= range.e.r; row++) {
-    const datumCell = sheet[XLSX.utils.encode_cell({ r: row, c: 0 })]
-    const themaCell = sheet[XLSX.utils.encode_cell({ r: row, c: 1 })]
-    const taetigkeitCell = sheet[XLSX.utils.encode_cell({ r: row, c: 2 })]
+  // Data typically starts at row 14
+  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber < 14) return // Skip header rows
 
-    if (!datumCell && !themaCell && !taetigkeitCell) continue
+    const datumCell = row.getCell(1)
+    const themaCell = row.getCell(2)
+    const taetigkeitCell = row.getCell(3)
 
-    const zeitCell = sheet[XLSX.utils.encode_cell({ r: row, c: 3 })]
-    const kmCell = sheet[XLSX.utils.encode_cell({ r: row, c: 4 })]
-    const hotelCell = sheet[XLSX.utils.encode_cell({ r: row, c: 5 })]
+    if (!datumCell.value && !themaCell.value && !taetigkeitCell.value) return
+
+    const zeitCell = row.getCell(4)
+    const kmCell = row.getCell(5)
+    const hotelCell = row.getCell(6)
 
     // Parse datum
     let datum = ''
-    if (datumCell) {
-      if (datumCell.t === 'd' && datumCell.v instanceof Date) {
-        datum = datumCell.v.toISOString().split('T')[0]
-      } else if (datumCell.w) {
-        datum = datumCell.w
+    if (datumCell.value) {
+      if (datumCell.value instanceof Date) {
+        datum = datumCell.value.toISOString().split('T')[0]
       } else {
-        datum = String(datumCell.v || '')
+        datum = String(datumCell.value)
       }
     }
 
     // Parse zeit (stored as fraction of day, convert to hours)
     let zeit: number | null = null
-    if (zeitCell && zeitCell.v !== undefined) {
-      if (typeof zeitCell.v === 'number') {
-        zeit = zeitCell.v * 24 // Convert from day fraction to hours
+    if (zeitCell.value !== null && zeitCell.value !== undefined) {
+      const val = zeitCell.value
+      if (typeof val === 'number') {
+        zeit = val * 24 // Convert from day fraction to hours
       }
     }
 
     activities.push({
-      row: row + 1, // Convert to 1-based for display
+      row: rowNumber,
       datum,
-      thema: themaCell?.v ? String(themaCell.v) : '',
-      taetigkeit: taetigkeitCell?.v ? String(taetigkeitCell.v) : '',
+      thema: themaCell.value ? String(themaCell.value) : '',
+      taetigkeit: taetigkeitCell.value ? String(taetigkeitCell.value) : '',
       zeit,
-      km: kmCell?.v ? Number(kmCell.v) : 0,
-      hotel: hotelCell?.v ? Number(hotelCell.v) : 0
+      km: kmCell.value ? Number(kmCell.value) : 0,
+      hotel: hotelCell.value ? Number(hotelCell.value) : 0
     })
-  }
+  })
 
   return activities
 }

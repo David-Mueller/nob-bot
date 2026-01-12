@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
+import { readFile, writeFile } from 'fs/promises'
 import { createBackup } from './backup'
 import { validateExcelFile } from './excel'
 import type { GlossarKategorie, GlossarEintrag, Glossar } from '@shared/types'
@@ -10,6 +11,7 @@ export type { GlossarKategorie, GlossarEintrag, Glossar }
  * Glossar service for standardizing terms from Excel sheets.
  * Reads a "Glossar" sheet with columns: Kategorie, Begriff, Synonyme
  * Can auto-create Glossar from existing data if sheet doesn't exist.
+ * Uses ExcelJS for full style preservation.
  */
 
 const MONTH_NAMES = [
@@ -41,23 +43,23 @@ export async function loadGlossar(xlsxPath: string): Promise<Glossar | null> {
     // Validate file before processing
     await validateExcelFile(xlsxPath)
 
-    const workbook = XLSX.readFile(xlsxPath, { cellStyles: false })
+    // Load workbook via buffer (workaround for Windows async iterable issue)
+    const workbook = new ExcelJS.Workbook()
+    const fileBuffer = await readFile(xlsxPath)
+    await workbook.xlsx.load(fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength))
 
     // Look for "Glossar" sheet (case-insensitive)
-    const sheetName = workbook.SheetNames.find(
-      name => name.toLowerCase() === 'glossar'
-    )
+    let glossarSheet: ExcelJS.Worksheet | undefined
+    workbook.eachSheet((sheet) => {
+      if (sheet.name.toLowerCase() === 'glossar') {
+        glossarSheet = sheet
+      }
+    })
 
-    if (!sheetName) {
+    if (!glossarSheet) {
       console.log(`[Glossar] No "Glossar" sheet found in ${xlsxPath}`)
       return null
     }
-
-    const sheet = workbook.Sheets[sheetName]
-    const data = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, {
-      header: ['kategorie', 'begriff', 'synonyme'],
-      range: 1 // Skip header row
-    })
 
     const eintraege: GlossarEintrag[] = []
     const byKategorie = new Map<GlossarKategorie, GlossarEintrag[]>()
@@ -69,22 +71,31 @@ export async function loadGlossar(xlsxPath: string): Promise<Glossar | null> {
       byKategorie.set(kat, [])
     }
 
-    for (const row of data) {
-      if (!row.kategorie || !row.begriff) continue
+    // Skip header row (row 1), read data from row 2 onwards
+    glossarSheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return // Skip header
 
-      const kategorie = row.kategorie as GlossarKategorie
-      const begriff = row.begriff.trim()
-      const synonymeStr = row.synonyme || ''
+      const kategorieCell = row.getCell(1)
+      const begriffCell = row.getCell(2)
+      const synonymeCell = row.getCell(3)
+
+      const kategorieVal = kategorieCell.value ? String(kategorieCell.value).trim() : ''
+      const begriffVal = begriffCell.value ? String(begriffCell.value).trim() : ''
+      const synonymeVal = synonymeCell.value ? String(synonymeCell.value).trim() : ''
+
+      if (!kategorieVal || !begriffVal) return
+
+      const kategorie = kategorieVal as GlossarKategorie
 
       // Parse synonyms (comma-separated)
-      const synonyme = synonymeStr
+      const synonyme = synonymeVal
         .split(',')
         .map(s => s.trim())
         .filter(s => s.length > 0)
 
       const eintrag: GlossarEintrag = {
         kategorie,
-        begriff,
+        begriff: begriffVal,
         synonyme
       }
 
@@ -97,13 +108,13 @@ export async function loadGlossar(xlsxPath: string): Promise<Glossar | null> {
 
       // Add to lookup map
       // The begriff itself maps to itself
-      lookupMap.set(normalizeForLookup(begriff), begriff)
+      lookupMap.set(normalizeForLookup(begriffVal), begriffVal)
 
       // Each synonym maps to the standardized begriff
       for (const synonym of synonyme) {
-        lookupMap.set(normalizeForLookup(synonym), begriff)
+        lookupMap.set(normalizeForLookup(synonym), begriffVal)
       }
-    }
+    })
 
     const glossar: Glossar = {
       eintraege,
@@ -225,25 +236,25 @@ function mergeGlossars(glossars: Glossar[]): Glossar {
 /**
  * Extract unique Thema values from all month sheets in an Excel file.
  */
-function extractThemenFromWorkbook(workbook: XLSX.WorkBook): string[] {
+async function extractThemenFromWorkbook(workbook: ExcelJS.Workbook): Promise<string[]> {
   const themen = new Set<string>()
 
   for (const sheetName of MONTH_NAMES) {
-    const sheet = workbook.Sheets[sheetName]
+    const sheet = workbook.getWorksheet(sheetName)
     if (!sheet) continue
 
-    const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1')
+    // Data typically starts at row 14, Thema is column B (2)
+    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber < 14) return // Skip header rows
 
-    // Data typically starts at row 14 (0-based: 13), Thema is column B (index 1)
-    for (let row = 13; row <= range.e.r; row++) {
-      const themaCell = sheet[XLSX.utils.encode_cell({ r: row, c: 1 })]
-      if (themaCell?.v) {
-        const thema = String(themaCell.v).trim()
+      const themaCell = row.getCell(2) // Column B
+      if (themaCell.value) {
+        const thema = String(themaCell.value).trim()
         if (thema.length > 0) {
           themen.add(thema)
         }
       }
-    }
+    })
   }
 
   return Array.from(themen).sort()
@@ -252,6 +263,7 @@ function extractThemenFromWorkbook(workbook: XLSX.WorkBook): string[] {
 /**
  * Create a Glossar sheet from existing data in the workbook.
  * Uses the auftraggeber from config and extracts Thema values from month sheets.
+ * ExcelJS preserves all existing styles.
  */
 export async function createGlossarSheet(
   xlsxPath: string,
@@ -264,58 +276,73 @@ export async function createGlossarSheet(
     // Create backup before modifying
     await createBackup(xlsxPath)
 
-    const workbook = XLSX.readFile(xlsxPath, { cellStyles: true })
+    // Load workbook via buffer (workaround for Windows async iterable issue)
+    const workbook = new ExcelJS.Workbook()
+    const fileBuffer = await readFile(xlsxPath)
+    await workbook.xlsx.load(fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength))
 
     // Check if Glossar sheet already exists
-    const existingSheet = workbook.SheetNames.find(
-      name => name.toLowerCase() === 'glossar'
-    )
+    let existingSheet: ExcelJS.Worksheet | undefined
+    workbook.eachSheet((sheet) => {
+      if (sheet.name.toLowerCase() === 'glossar') {
+        existingSheet = sheet
+      }
+    })
+
     if (existingSheet) {
       console.log(`[Glossar] Sheet already exists in ${xlsxPath}`)
       return loadGlossar(xlsxPath)
     }
 
     // Extract unique Thema values from existing data
-    const themen = extractThemenFromWorkbook(workbook)
+    const themen = await extractThemenFromWorkbook(workbook)
 
     // Build the Glossar data
-    const glossarData: Array<{ Kategorie: string; Begriff: string; Synonyme: string }> = []
+    const glossarData: Array<{ kategorie: string; begriff: string; synonyme: string }> = []
 
     // Add Auftraggeber entry
     if (auftraggeber) {
       glossarData.push({
-        Kategorie: 'Auftraggeber',
-        Begriff: auftraggeber,
-        Synonyme: ''
+        kategorie: 'Auftraggeber',
+        begriff: auftraggeber,
+        synonyme: ''
       })
     }
 
     // Add Thema entries
     for (const thema of themen) {
       glossarData.push({
-        Kategorie: 'Thema',
-        Begriff: thema,
-        Synonyme: ''
+        kategorie: 'Thema',
+        begriff: thema,
+        synonyme: ''
       })
     }
 
-    // Create the Glossar sheet
-    const glossarSheet = XLSX.utils.json_to_sheet(glossarData, {
-      header: ['Kategorie', 'Begriff', 'Synonyme']
-    })
+    // Create the Glossar sheet - minimal approach, only set cell values directly
+    const glossarSheet = workbook.addWorksheet('Glossar')
 
-    // Set column widths
-    glossarSheet['!cols'] = [
-      { wch: 15 }, // Kategorie
-      { wch: 30 }, // Begriff
-      { wch: 40 }  // Synonyme
-    ]
+    // Set column widths directly (no headers in column definition)
+    glossarSheet.getColumn(1).width = 15
+    glossarSheet.getColumn(2).width = 30
+    glossarSheet.getColumn(3).width = 40
 
-    // Add the sheet to the workbook
-    XLSX.utils.book_append_sheet(workbook, glossarSheet, 'Glossar')
+    // Write header row manually
+    glossarSheet.getCell(1, 1).value = 'Kategorie'
+    glossarSheet.getCell(1, 2).value = 'Begriff'
+    glossarSheet.getCell(1, 3).value = 'Synonyme'
 
-    // Write the workbook back
-    XLSX.writeFile(workbook, xlsxPath, { cellStyles: true, compression: true })
+    // Write data rows manually (starting at row 2)
+    let rowNum = 2
+    for (const entry of glossarData) {
+      glossarSheet.getCell(rowNum, 1).value = entry.kategorie
+      glossarSheet.getCell(rowNum, 2).value = entry.begriff
+      glossarSheet.getCell(rowNum, 3).value = entry.synonyme
+      rowNum++
+    }
+
+    // Write the workbook back via buffer (workaround for Windows async iterable issue)
+    const outBuffer = await workbook.xlsx.writeBuffer()
+    await writeFile(xlsxPath, Buffer.from(outBuffer))
 
     console.log(`[Glossar] Created sheet with ${glossarData.length} entries in ${xlsxPath}`)
 

@@ -16,7 +16,6 @@ const CONFIG_FILE = join(CONFIG_DIR, 'config.yaml')
 const DEFAULT_SETTINGS: AppSettings = {
   hotkey: 'CommandOrControl+Shift+R',
   openaiApiKey: '',
-  whisperModel: 'base',
   ttsEnabled: false,
   ttsVoice: 'nova'
 }

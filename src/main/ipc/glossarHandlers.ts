@@ -1,7 +1,5 @@
 import { ipcMain } from 'electron'
 import {
-  loadGlossar,
-  loadGlossarsFromPaths,
   normalizeText,
   getAllKnownTerms,
   clearGlossarCache,
@@ -17,18 +15,9 @@ import { ExcelPathSchema, StringInputSchema } from '../schemas/ipcSchemas'
 let currentGlossar: Glossar | null = null
 
 export function registerGlossarHandlers(): void {
-  // Load glossar from all active Excel files
+  // Load glossar from all active Excel files (creates Glossar sheets if missing)
   ipcMain.handle('glossar:load', async (): Promise<boolean> => {
-    const activeFiles = getActiveFiles()
-    const paths = activeFiles.map((f) => f.path)
-
-    if (paths.length === 0) {
-      console.log('[Glossar] No active files to load glossar from')
-      currentGlossar = null
-      return false
-    }
-
-    currentGlossar = await loadGlossarsFromPaths(paths)
+    await reloadGlossar()
     return currentGlossar !== null
   })
 
