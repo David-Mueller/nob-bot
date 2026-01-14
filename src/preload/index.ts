@@ -124,6 +124,9 @@ const api = {
     getBasePath: (): Promise<string> => {
       return ipcRenderer.invoke('config:getBasePath')
     },
+    browseFolder: (): Promise<string | null> => {
+      return ipcRenderer.invoke('config:browseFolder')
+    },
     scanFiles: (): Promise<ScannedFile[]> => {
       return ipcRenderer.invoke('config:scanFiles')
     },
@@ -150,6 +153,16 @@ const api = {
     },
     updateSettings: (updates: Partial<AppSettings>): Promise<AppSettings> => {
       return ipcRenderer.invoke('config:updateSettings', updates)
+    },
+    debugInfo: (): Promise<{
+      basePath: string
+      pathExists: boolean
+      allFiles: string[]
+      xlsxFiles: string[]
+      lvFiles: string[]
+      error: string | null
+    }> => {
+      return ipcRenderer.invoke('config:debugInfo')
     }
   },
 
@@ -160,6 +173,9 @@ const api = {
     },
     isReady: (): Promise<boolean> => {
       return ipcRenderer.invoke('tts:isReady')
+    },
+    clearCache: (): Promise<number> => {
+      return ipcRenderer.invoke('tts:clearCache')
     }
   },
 
@@ -215,6 +231,16 @@ const api = {
     },
     clear: (): Promise<void> => {
       return ipcRenderer.invoke('drafts:clear')
+    }
+  },
+
+  // Debug API
+  debug: {
+    getLogPath: (): Promise<string> => {
+      return ipcRenderer.invoke('debug:getLogPath')
+    },
+    readLog: (): Promise<string> => {
+      return ipcRenderer.invoke('debug:readLog')
     }
   }
 }

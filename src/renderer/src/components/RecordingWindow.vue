@@ -12,7 +12,7 @@ const props = defineProps<{
   editingContext?: string
 }>()
 
-const { status, errorMessage, audioBlob, startRecording, stopRecording, cancelRecording, reset } =
+const { status, errorMessage, audioBlob, audioLevels, startRecording, stopRecording, cancelRecording, reset } =
   useAudioRecorder()
 
 const recordingTime = ref(0)
@@ -84,8 +84,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="recording-overlay fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="recording-window p-6 bg-white rounded-xl shadow-2xl w-80">
+  <div class="recording-overlay fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in">
+    <div class="recording-window p-6 bg-white rounded-xl shadow-2xl w-80 animate-scale-in">
     <!-- Editing Context Banner -->
     <div
       v-if="props.editingContext"
@@ -103,7 +103,7 @@ onUnmounted(() => {
     <!-- Status Indicator -->
     <div class="flex items-center justify-center gap-3 mb-6">
       <span
-        v-if="status === 'recording'"
+        v-if="status === 'recording' || (status === 'idle' && props.autoStart)"
         class="w-4 h-4 bg-red-500 rounded-full animate-pulse"
       />
       <span
@@ -120,8 +120,8 @@ onUnmounted(() => {
       />
 
       <span class="text-lg font-medium text-gray-700">
-        <template v-if="status === 'idle'">Bereit</template>
-        <template v-else-if="status === 'recording'">
+        <template v-if="status === 'idle' && !props.autoStart">Bereit</template>
+        <template v-else-if="status === 'recording' || (status === 'idle' && props.autoStart)">
           Aufnahme läuft... {{ formatTime(recordingTime) }}
         </template>
         <template v-else-if="status === 'processing'">Verarbeite...</template>
@@ -129,27 +129,27 @@ onUnmounted(() => {
       </span>
     </div>
 
-    <!-- Recording visualization -->
+    <!-- Recording visualization - show immediately for autoStart -->
     <div
-      v-if="status === 'recording'"
-      class="h-16 bg-gray-100 rounded-lg mb-6 flex items-center justify-center"
+      :class="[
+        'bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden transition-all duration-300 ease-out',
+        (status === 'recording' || (status === 'idle' && props.autoStart)) ? 'h-16 opacity-100 mb-6' : 'h-0 opacity-0 mb-0'
+      ]"
     >
-      <div class="flex gap-1 items-end h-8">
+      <div class="flex gap-1 items-end h-10">
         <div
-          v-for="i in 5"
+          v-for="(level, i) in audioLevels"
           :key="i"
-          class="w-2 bg-blue-500 rounded animate-pulse"
-          :style="{
-            height: `${Math.random() * 100}%`,
-            animationDelay: `${i * 0.1}s`
-          }"
+          class="w-2 bg-blue-500 rounded-full transition-all duration-75"
+          :style="{ height: `${Math.max(8, level * 100)}%` }"
         />
       </div>
     </div>
 
     <!-- Controls -->
     <div class="flex flex-col gap-4">
-      <div v-if="status === 'idle'" class="flex justify-center">
+      <!-- Manual start button (only when NOT autoStart) -->
+      <div v-if="status === 'idle' && !props.autoStart" class="flex justify-center">
         <button
           @click="handleStart"
           class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-8 rounded-lg transition-colors flex items-center gap-2"
@@ -161,16 +161,23 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <div v-else-if="status === 'recording'" class="flex justify-center gap-4">
+      <!-- Recording controls (shown for autoStart starting OR actual recording) -->
+      <div v-else-if="status === 'recording' || (status === 'idle' && props.autoStart)" class="flex justify-center gap-4">
         <button
           @click="handleStop"
-          class="bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+          :disabled="status !== 'recording'"
+          :class="[
+            'flex-1 max-w-[130px] font-semibold py-3 px-4 rounded-lg transition-colors',
+            status === 'recording'
+              ? 'bg-green-500 hover:bg-green-600 text-white'
+              : 'bg-gray-300 text-gray-100 cursor-not-allowed'
+          ]"
         >
           Fertig (Enter)
         </button>
         <button
           @click="handleCancel"
-          class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+          class="flex-1 max-w-[130px] bg-gray-400 hover:bg-gray-500 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
         >
           Abbrechen (Esc)
         </button>
@@ -186,15 +193,33 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Keyboard hints -->
-    <div class="mt-6 text-center text-sm text-gray-500">
-      <span v-if="status === 'recording'">
-        [Enter] Fertig &nbsp;|&nbsp; [Esc] Abbrechen
-      </span>
-      <span v-else>
-        Strg+Shift+A für Schnellaufnahme
-      </span>
-    </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Popup entrance animations */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.25s ease-out;
+}
+</style>

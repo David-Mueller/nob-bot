@@ -68,12 +68,22 @@ type ScannedFile = {
   jahr: number | null
 }
 
+type DebugInfo = {
+  basePath: string
+  pathExists: boolean
+  allFiles: string[]
+  xlsxFiles: string[]
+  lvFiles: string[]
+  error: string | null
+}
+
 type ConfigAPI = {
   load: () => Promise<AppConfig>
   save: (config: AppConfig) => Promise<void>
   get: () => Promise<AppConfig>
   setBasePath: (path: string) => Promise<void>
   getBasePath: () => Promise<string>
+  browseFolder: () => Promise<string | null>
   scanFiles: () => Promise<ScannedFile[]>
   updateFile: (path: string, updates: Partial<XlsxFileConfig>) => Promise<void>
   getFiles: () => Promise<XlsxFileConfig[]>
@@ -83,6 +93,7 @@ type ConfigAPI = {
   removeFile: (path: string) => Promise<void>
   getSettings: () => Promise<AppSettings>
   updateSettings: (updates: Partial<AppSettings>) => Promise<AppSettings>
+  debugInfo: () => Promise<DebugInfo>
 }
 
 type GlossarEntry = {
@@ -111,6 +122,7 @@ type TTSVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
 type TTSAPI = {
   speak: (text: string, voice?: TTSVoice) => Promise<Uint8Array>
   isReady: () => Promise<boolean>
+  clearCache: () => Promise<number>
 }
 
 type DraftEntry = {
@@ -127,6 +139,11 @@ type DraftsAPI = {
   clear: () => Promise<void>
 }
 
+type DebugAPI = {
+  getLogPath: () => Promise<string>
+  readLog: () => Promise<string>
+}
+
 type ElectronAPI = {
   onStartRecording: (callback: RecordingCallback) => void
   removeStartRecordingListener: (callback: RecordingCallback) => void
@@ -137,6 +154,7 @@ type ElectronAPI = {
   glossar: GlossarAPI
   tts: TTSAPI
   drafts: DraftsAPI
+  debug: DebugAPI
 }
 
 declare global {

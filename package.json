@@ -1,27 +1,28 @@
 {
   "name": "aktivitaeten",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "NoB-Con Aktivitäten - Spracheingabe für Arbeitszeiten",
   "main": "./out/main/index.js",
-  "author": "noboehme@nob-con.de",
+  "author": "hakobu GmbH <office@hakobu.de>",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:debug": "DEBUG=1 electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "build:win": "electron-vite build && electron-builder --win --x64",
+    "build:win:clean": "rm -rf node_modules && pnpm install && electron-vite build && electron-builder --win --x64",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
     "@langchain/core": "^1.1.12",
     "@langchain/openai": "^1.2.1",
     "dotenv": "^17.2.3",
-    "exceljs": "^4.4.0",
     "glob": "^13.0.0",
     "openai": "^6.16.0",
     "pinia": "^2.3.0",
     "vue": "^3.5.13",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "xlsx-populate": "^1.21.0",
     "yaml": "^2.8.2",
     "zod": "^4.3.5"
   },
@@ -78,6 +79,12 @@
     "files": [
       "out/**/*",
       "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/debug-start.bat",
+        "to": "debug-start.bat"
+      }
     ]
   }
 }

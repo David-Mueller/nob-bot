@@ -7,7 +7,8 @@ export type XlsxFileConfig = {
 
 export type AppSettings = {
   hotkey: string
-  openaiApiKey: string
+  openaiApiKey: string // Only used for updates, never returned to renderer
+  hasApiKey: boolean   // Indicates if an API key is configured
   ttsEnabled: boolean
   ttsVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
 }

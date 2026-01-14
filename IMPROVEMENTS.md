@@ -1,5 +1,24 @@
 # Aktivitäten - Code Improvements & Fixes
 
+## Version 1.1.0 (Januar 2026)
+
+### Neue Features & Verbesserungen
+
+- **Neue Excel-Library**: Migration von xlsx/ExcelJS zu xlsx-populate. Zellen-Styles werden jetzt zuverlässig beibehalten.
+- **Echtzeit-Audiovisualisierung**: Die Aufnahme zeigt jetzt ein echtes Frequenzspektrum der Stimme statt einer fake Animation. 17 Frequenzbänder optimiert für Sprachfrequenzen.
+- **Flüssigere Aufnahme-UI**: Das Aufnahme-Popup öffnet sich jetzt sanft ohne Content-Jump. Animationen mit CSS transitions.
+- **Fortschrittsanzeige**: Einträge in der Liste zeigen einen Ladebalken während Speichern (grün) oder Bearbeiten (amber).
+- **TTS Audio-Cache**: Die gesprochenen Texte werden beim ersten Mal auf der Festplatte gespeichert und bei Wiederholung vom lokalen Cache wiedergegeben. In den Einstellungen kann der Cache manuell geleert werden.
+
+### Technische Änderungen
+
+- Neuer `workbook.ts` Service für gemeinsame Excel-Operationen
+- `debugLog.ts` für einheitliches Debug-Logging
+- Web Audio API Integration (AudioContext, AnalyserNode) für Mikrofon-Visualisierung
+- TypeScript Types für xlsx-populate
+
+---
+
 Quick-start guide for implementing key recommendations from REVIEW.md
 
 ---

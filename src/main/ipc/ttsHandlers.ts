@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { speak, isTTSReady, type TTSVoice } from '../services/tts'
+import { speak, isTTSReady, clearCache, type TTSVoice } from '../services/tts'
 
 export function registerTTSHandlers(): void {
   // Speak text using TTS
@@ -15,5 +15,10 @@ export function registerTTSHandlers(): void {
   // Check if TTS is ready (API key present)
   ipcMain.handle('tts:isReady', async (): Promise<boolean> => {
     return await isTTSReady()
+  })
+
+  // Clear TTS cache (memory and disk)
+  ipcMain.handle('tts:clearCache', async (): Promise<number> => {
+    return await clearCache()
   })
 }

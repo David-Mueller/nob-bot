@@ -32,7 +32,7 @@
 
 ## Backlog
 
-(keine offenen Items)
+- [ ] BUG-001: XLSX Cross-Platform Write (Mac + Windows)
 
 ---
 
@@ -61,3 +61,4 @@
 | FEAT-022 | Parallele Glossar-Ladung | [Spec](specs/FEAT-022-parallel-glossar-loading.md) | ✅ Done |
 | FEAT-023 | App.vue Refactoring | [Spec](specs/FEAT-023-app-vue-refactoring.md) | ✅ Done |
 | FEAT-024 | Shared Types Module | [Spec](specs/FEAT-024-shared-types.md) | ✅ Done |
+| BUG-001 | XLSX Cross-Platform Write | [Spec](specs/BUG-001-xlsx-write-cross-platform.md) | 📋 Backlog |

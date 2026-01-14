@@ -24,12 +24,17 @@ const chatStore = useChatStore()
 
 // Composables
 const { status: whisperStatus, loadingProgress, error: whisperError, init: initWhisper, transcribe } = useWhisper()
-const { speak } = useTTS()
+const { speak, stop: stopTTS } = useTTS()
 const { loadDrafts, setupAutoSave } = useDrafts()
 
 // Local UI state
 const currentView = ref<ViewTab>('record')
 const chatContainer = ref<HTMLElement | null>(null)
+const savingEntryIds = ref<Set<number>>(new Set())
+
+// Platform-specific hotkey display
+const isMac = navigator.platform.toLowerCase().includes('mac')
+const hotkeyDisplay = isMac ? 'Cmd+Shift+R' : 'Strg+Shift+R'
 
 // Keep chat container ref synced with store
 watch(chatContainer, (el) => chatStore.setChatContainer(el))
@@ -79,6 +84,7 @@ const handleStartRecording = (): void => {
 
 const handleRecorded = async (blob: Blob): Promise<void> => {
   console.log('Recording completed:', blob.size, 'bytes')
+  stopTTS() // Cancel any playing audio announcement
   recordingStore.hideOverlay()
   recordingStore.setProcessing(true, 'transcribing')
 
@@ -195,6 +201,7 @@ const handleRecorded = async (blob: Blob): Promise<void> => {
 }
 
 const handleCancelled = (): void => {
+  stopTTS() // Cancel any playing audio announcement
   recordingStore.reset()
 }
 
@@ -207,17 +214,24 @@ const handleOpenFile = async (filePath: string): Promise<void> => {
 const handleSaveEntry = async (entry: ActivityEntry): Promise<void> => {
   console.log('Saving entry:', entry)
 
-  const result = await window.api?.excel.saveActivity(toRaw(entry.activity))
+  // Track saving state
+  savingEntryIds.value.add(entry.id)
 
-  if (result?.success) {
-    activityStore.markSaved(entry.id, result.filePath!)
-    chatStore.addAssistantMessage(
-      `\u2705 Aktivität "${entry.activity.beschreibung}" wurde gespeichert.`,
-      undefined,
-      result.filePath
-    )
-  } else {
-    chatStore.addErrorMessage(`Speichern fehlgeschlagen: ${result?.error || 'Unbekannter Fehler'}`)
+  try {
+    const result = await window.api?.excel.saveActivity(toRaw(entry.activity))
+
+    if (result?.success) {
+      activityStore.markSaved(entry.id, result.filePath!)
+      chatStore.addAssistantMessage(
+        `\u2705 Aktivität "${entry.activity.beschreibung}" wurde gespeichert.`,
+        undefined,
+        result.filePath
+      )
+    } else {
+      chatStore.addErrorMessage(`Speichern fehlgeschlagen: ${result?.error || 'Unbekannter Fehler'}`)
+    }
+  } finally {
+    savingEntryIds.value.delete(entry.id)
   }
 }
 
@@ -263,7 +277,7 @@ onUnmounted(() => {
       <div class="flex items-center justify-between mb-3">
         <div>
           <h1 class="text-lg font-semibold text-gray-800">NoB-Con Aktivitäten</h1>
-          <p class="text-xs text-gray-500">Cmd+Shift+R / Strg+Shift+R</p>
+          <p class="text-xs text-gray-500">{{ hotkeyDisplay }}</p>
         </div>
         <div class="flex items-center gap-3">
           <!-- Config Status - click to go to Dateien tab -->
@@ -374,8 +388,7 @@ onUnmounted(() => {
         <svg class="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
         </svg>
-        <p class="text-sm">Klicke auf den Mikrofon-Button</p>
-        <p class="text-xs mt-1">oder drücke Cmd+Shift+R</p>
+        <p class="text-sm">{{ hotkeyDisplay }}</p>
       </div>
 
       <!-- Messages -->
@@ -490,6 +503,9 @@ onUnmounted(() => {
     <div v-else-if="currentView === 'list'" class="flex-1 overflow-y-auto p-4">
       <ActivityList
         :entries="activityStore.entries"
+        :saving-ids="savingEntryIds"
+        :editing-id="recordingStore.editingEntryId"
+        :is-processing="recordingStore.isProcessing"
         @save="handleSaveEntry"
         @edit="handleEditEntry"
         @delete="handleDeleteEntry"

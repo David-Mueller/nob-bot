@@ -4,6 +4,9 @@ import type { Activity, ActivityEntry } from '@shared/types'
 
 const props = defineProps<{
   entries: ActivityEntry[]
+  savingIds: Set<number>
+  editingId: number | null
+  isProcessing: boolean
 }>()
 
 const emit = defineEmits<{
@@ -73,6 +76,11 @@ const formatTime = (minutes: number): string => {
   }
   return `${h}h ${m}min`
 }
+
+// Check if entry is currently being edited via voice
+const isEntryBeingEdited = (entryId: number): boolean => {
+  return props.editingId === entryId && props.isProcessing
+}
 </script>
 
 <template>
@@ -94,7 +102,7 @@ const formatTime = (minutes: number): string => {
         v-for="entry in sortedEntries"
         :key="entry.id"
         :class="[
-          'rounded-lg border p-4 transition-shadow hover:shadow-md',
+          'relative rounded-lg border p-4 transition-shadow hover:shadow-md overflow-hidden',
           getStatusColor(entry)
         ]"
       >
@@ -189,10 +197,10 @@ const formatTime = (minutes: number): string => {
           <button
             v-if="!entry.saved"
             @click="emit('save', entry)"
-            :disabled="getRequiredMissing(entry.activity).length > 0"
+            :disabled="getRequiredMissing(entry.activity).length > 0 || savingIds.has(entry.id) || isEntryBeingEdited(entry.id)"
             class="text-xs px-3 py-1.5 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded transition-colors"
           >
-            Speichern
+            {{ savingIds.has(entry.id) ? 'Speichert...' : 'Speichern' }}
           </button>
           <button
             v-if="entry.saved && entry.savedFilePath"
@@ -207,18 +215,54 @@ const formatTime = (minutes: number): string => {
           <button
             v-if="!entry.saved"
             @click="emit('edit', entry)"
-            class="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
+            :disabled="savingIds.has(entry.id) || isEntryBeingEdited(entry.id)"
+            class="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Bearbeiten
+            {{ isEntryBeingEdited(entry.id) ? 'Bearbeitet...' : 'Bearbeiten' }}
           </button>
           <button
             @click="emit('delete', entry)"
-            class="text-xs px-3 py-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+            :disabled="savingIds.has(entry.id) || isEntryBeingEdited(entry.id)"
+            class="text-xs px-3 py-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Löschen
           </button>
+        </div>
+
+        <!-- Loading Progress Bar -->
+        <div
+          v-if="savingIds.has(entry.id) || isEntryBeingEdited(entry.id)"
+          class="absolute bottom-0 left-0 right-0 h-1 bg-gray-200 rounded-b-lg overflow-hidden"
+        >
+          <div
+            :class="[
+              'h-full animate-progress-indeterminate',
+              savingIds.has(entry.id) ? 'bg-green-500' : 'bg-amber-500'
+            ]"
+          ></div>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+    width: 50%;
+  }
+  50% {
+    transform: translateX(50%);
+    width: 50%;
+  }
+  100% {
+    transform: translateX(200%);
+    width: 50%;
+  }
+}
+
+.animate-progress-indeterminate {
+  animation: progress-indeterminate 1.5s ease-in-out infinite;
+}
+</style>

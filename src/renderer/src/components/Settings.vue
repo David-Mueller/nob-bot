@@ -4,6 +4,7 @@ import { ref, onMounted, toRaw } from 'vue'
 type AppSettings = {
   hotkey: string
   openaiApiKey: string
+  hasApiKey: boolean
   ttsEnabled: boolean
   ttsVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
 }
@@ -11,13 +12,22 @@ type AppSettings = {
 const settings = ref<AppSettings>({
   hotkey: 'CommandOrControl+Shift+R',
   openaiApiKey: '',
+  hasApiKey: false,
   ttsEnabled: false,
   ttsVoice: 'nova'
 })
 
+// Track if user has started editing the API key field
+const apiKeyEditing = ref(false)
+const newApiKey = ref('')
+
 const saving = ref(false)
 const saved = ref(false)
 const error = ref<string | null>(null)
+
+// TTS cache state
+const clearingCache = ref(false)
+const cacheCleared = ref<number | null>(null)
 
 const loadSettings = async (): Promise<void> => {
   try {
@@ -37,7 +47,27 @@ const saveSettings = async (): Promise<void> => {
   error.value = null
 
   try {
-    await window.api?.config.updateSettings(toRaw(settings.value))
+    // Build update object - only include API key if user entered a new one
+    const updates: Partial<AppSettings> = {
+      hotkey: settings.value.hotkey,
+      ttsEnabled: settings.value.ttsEnabled,
+      ttsVoice: settings.value.ttsVoice
+    }
+
+    // Only send API key if user entered something new
+    if (newApiKey.value) {
+      updates.openaiApiKey = newApiKey.value
+    }
+
+    await window.api?.config.updateSettings(updates)
+
+    // Reset API key editing state
+    if (newApiKey.value) {
+      settings.value.hasApiKey = true
+      newApiKey.value = ''
+      apiKeyEditing.value = false
+    }
+
     saved.value = true
     setTimeout(() => {
       saved.value = false
@@ -51,6 +81,22 @@ const saveSettings = async (): Promise<void> => {
 }
 
 const showApiKey = ref(false)
+
+const clearTTSCache = async (): Promise<void> => {
+  clearingCache.value = true
+  cacheCleared.value = null
+  try {
+    const count = await window.api?.tts.clearCache()
+    cacheCleared.value = count ?? 0
+    setTimeout(() => {
+      cacheCleared.value = null
+    }, 3000)
+  } catch (err) {
+    console.error('Failed to clear TTS cache:', err)
+  } finally {
+    clearingCache.value = false
+  }
+}
 
 onMounted(() => {
   loadSettings()
@@ -83,24 +129,50 @@ onMounted(() => {
         OpenAI API Key
       </label>
       <div class="relative">
-        <input
-          v-model="settings.openaiApiKey"
-          :type="showApiKey ? 'text' : 'password'"
-          class="w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono"
-          placeholder="sk-..."
-        />
-        <button
-          type="button"
-          @click="showApiKey = !showApiKey"
-          class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+        <!-- Show masked indicator if key exists and not editing -->
+        <div
+          v-if="settings.hasApiKey && !apiKeyEditing"
+          class="w-full px-3 py-2 border rounded-lg bg-gray-50 text-sm font-mono text-gray-600 flex items-center"
         >
-          <svg v-if="showApiKey" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
-          </svg>
-          <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-          </svg>
+          <span class="flex-1">••••••••••••••••</span>
+          <button
+            type="button"
+            @click="apiKeyEditing = true"
+            class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2"
+          >
+            Ändern
+          </button>
+        </div>
+        <!-- Input for new/editing key -->
+        <div v-else class="relative">
+          <input
+            v-model="newApiKey"
+            :type="showApiKey ? 'text' : 'password'"
+            class="w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono"
+            placeholder="sk-..."
+          />
+          <button
+            type="button"
+            @click="showApiKey = !showApiKey"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+          >
+            <svg v-if="showApiKey" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+            </svg>
+            <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Cancel button when editing existing key -->
+        <button
+          v-if="settings.hasApiKey && apiKeyEditing"
+          type="button"
+          @click="apiKeyEditing = false; newApiKey = ''"
+          class="mt-1 text-xs text-gray-500 hover:text-gray-700"
+        >
+          Abbrechen
         </button>
       </div>
       <p class="text-xs text-gray-500">
@@ -136,21 +208,37 @@ onMounted(() => {
         </button>
       </div>
 
-      <div v-if="settings.ttsEnabled" class="space-y-2">
-        <label class="block text-sm font-medium text-gray-700">
-          Stimme
-        </label>
-        <select
-          v-model="settings.ttsVoice"
-          class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-        >
-          <option value="nova">Nova (weiblich, warm)</option>
-          <option value="alloy">Alloy (neutral)</option>
-          <option value="echo">Echo (männlich)</option>
-          <option value="fable">Fable (britisch)</option>
-          <option value="onyx">Onyx (männlich, tief)</option>
-          <option value="shimmer">Shimmer (weiblich, klar)</option>
-        </select>
+      <div v-if="settings.ttsEnabled" class="space-y-4">
+        <div class="space-y-2">
+          <label class="block text-sm font-medium text-gray-700">
+            Stimme
+          </label>
+          <select
+            v-model="settings.ttsVoice"
+            class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+          >
+            <option value="nova">Nova (weiblich, warm)</option>
+            <option value="alloy">Alloy (neutral)</option>
+            <option value="echo">Echo (männlich)</option>
+            <option value="fable">Fable (britisch)</option>
+            <option value="onyx">Onyx (männlich, tief)</option>
+            <option value="shimmer">Shimmer (weiblich, klar)</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-3 pt-2 border-t border-gray-200">
+          <button
+            type="button"
+            @click="clearTTSCache"
+            :disabled="clearingCache"
+            class="px-3 py-1.5 text-xs bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed rounded transition-colors"
+          >
+            {{ clearingCache ? 'Lösche...' : 'Audio-Cache leeren' }}
+          </button>
+          <span v-if="cacheCleared !== null" class="text-xs text-green-600">
+            ✓ {{ cacheCleared }} Dateien gelöscht
+          </span>
+        </div>
       </div>
     </div>
 

@@ -16,6 +16,7 @@ const CONFIG_FILE = join(CONFIG_DIR, 'config.yaml')
 const DEFAULT_SETTINGS: AppSettings = {
   hotkey: 'CommandOrControl+Shift+R',
   openaiApiKey: '',
+  hasApiKey: false,
   ttsEnabled: false,
   ttsVoice: 'nova'
 }
@@ -151,8 +152,13 @@ export function findFileForAuftraggeber(
 }
 
 // Settings functions
-export function getSettings(): AppSettings {
-  return currentConfig.settings
+export async function getSettings(): Promise<AppSettings> {
+  const hasKey = await hasStoredApiKey() || !!process.env.OPENAI_API_KEY
+  return {
+    ...currentConfig.settings,
+    openaiApiKey: '', // Never return actual key to renderer
+    hasApiKey: hasKey
+  }
 }
 
 export async function updateSettings(updates: Partial<AppSettings>): Promise<AppSettings> {

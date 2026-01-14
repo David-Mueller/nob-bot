@@ -1,5 +1,7 @@
-import { ipcMain } from 'electron'
-import { stat } from 'fs/promises'
+import { ipcMain, dialog } from 'electron'
+import { stat, readdir } from 'fs/promises'
+import { existsSync } from 'fs'
+import { getLogFilePath, readLogFile } from '../services/debugLog'
 import {
   loadConfig,
   saveConfig,
@@ -41,20 +43,35 @@ export function registerConfigHandlers(): void {
   })
 
   // Update base path - validates path and ensures it's a directory
+  // NOTE: Does NOT use validatePath because we're setting a NEW allowed base path
   ipcMain.handle('config:setBasePath', async (_event, path: unknown): Promise<void> => {
+    console.log(`[Config] setBasePath called with:`, path, `(type: ${typeof path})`)
+
     try {
       const validated = FilePathSchema.parse(path)
-      const safePath = validatePath(validated)
+      console.log(`[Config] After schema parse:`, validated)
+
+      // Basic security: block path traversal
+      if (validated.includes('..')) {
+        throw new Error('Path traversal not allowed')
+      }
 
       // Verify directory exists
-      const stats = await stat(safePath)
+      console.log(`[Config] Checking if path exists...`)
+      const stats = await stat(validated)
+      console.log(`[Config] Stats:`, { isDirectory: stats.isDirectory(), isFile: stats.isFile() })
+
       if (!stats.isDirectory()) {
         throw new Error('Path must be a directory')
       }
 
+      // Remove trailing slashes for consistent storage
+      const cleanPath = validated.replace(/[\\/]+$/, '')
+
       const config = getConfig()
-      config.xlsxBasePath = safePath
+      config.xlsxBasePath = cleanPath
       await saveConfig(config)
+      console.log(`[Config] Base path set to: ${cleanPath}`)
     } catch (err) {
       console.error('[Config] Invalid base path:', err)
       throw err
@@ -66,10 +83,26 @@ export function registerConfigHandlers(): void {
     return getConfig().xlsxBasePath
   })
 
+  // Browse for folder
+  ipcMain.handle('config:browseFolder', async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Ordner auswählen',
+      properties: ['openDirectory']
+    })
+
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0]
+    }
+    return null
+  })
+
   // Scan directory for XLSX files
   ipcMain.handle('config:scanFiles', async (): Promise<ScannedFile[]> => {
     const basePath = getConfig().xlsxBasePath
-    return await scanDirectory(basePath)
+    console.log(`[Config] scanFiles called, basePath from config: "${basePath}"`)
+    const results = await scanDirectory(basePath)
+    console.log(`[Config] scanFiles returning ${results.length} files`)
+    return results
   })
 
   // Update a single XLSX file config
@@ -145,8 +178,8 @@ export function registerConfigHandlers(): void {
   })
 
   // Get settings
-  ipcMain.handle('config:getSettings', (): AppSettings => {
-    return getSettings()
+  ipcMain.handle('config:getSettings', async (): Promise<AppSettings> => {
+    return await getSettings()
   })
 
   // Update settings
@@ -162,4 +195,48 @@ export function registerConfigHandlers(): void {
       }
     }
   )
+
+  // Debug: get diagnostic info about path and files
+  ipcMain.handle('config:debugInfo', async (): Promise<{
+    basePath: string
+    pathExists: boolean
+    allFiles: string[]
+    xlsxFiles: string[]
+    lvFiles: string[]
+    error: string | null
+  }> => {
+    const basePath = getConfig().xlsxBasePath
+    const result = {
+      basePath,
+      pathExists: false,
+      allFiles: [] as string[],
+      xlsxFiles: [] as string[],
+      lvFiles: [] as string[],
+      error: null as string | null
+    }
+
+    try {
+      result.pathExists = existsSync(basePath)
+
+      if (result.pathExists) {
+        result.allFiles = await readdir(basePath)
+        result.xlsxFiles = result.allFiles.filter(f => f.toLowerCase().endsWith('.xlsx'))
+        result.lvFiles = result.xlsxFiles.filter(f => f.toLowerCase().startsWith('lv'))
+      }
+    } catch (err) {
+      result.error = err instanceof Error ? err.message : String(err)
+    }
+
+    return result
+  })
+
+  // Debug: get log file path
+  ipcMain.handle('debug:getLogPath', (): string => {
+    return getLogFilePath()
+  })
+
+  // Debug: read log file contents
+  ipcMain.handle('debug:readLog', async (): Promise<string> => {
+    return await readLogFile()
+  })
 }

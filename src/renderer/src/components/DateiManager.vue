@@ -57,6 +57,13 @@ const loadConfig = async (): Promise<void> => {
   }))
 }
 
+const browseFolder = async (): Promise<void> => {
+  const path = await window.api?.config.browseFolder()
+  if (path) {
+    basePath.value = path
+  }
+}
+
 const scanFiles = async (): Promise<void> => {
   if (!basePath.value) {
     scanError.value = 'Bitte zuerst einen Pfad eingeben'
@@ -72,6 +79,7 @@ const scanFiles = async (): Promise<void> => {
 
     // Scan for files
     const scanned = await window.api?.config.scanFiles() || []
+    console.log('[DateiManager] Scanned files:', scanned)
 
     // Get existing config
     const existing = await window.api?.config.getFiles() || []
@@ -231,6 +239,15 @@ onMounted(loadConfig)
         placeholder="Pfad zu XLSX-Dateien (z.B. D:\C-Con\AL-kas)"
         class="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
+      <button
+        @click="browseFolder"
+        class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
+        title="Ordner auswählen"
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+        </svg>
+      </button>
       <button
         @click="scanFiles"
         :disabled="isScanning"

@@ -39,13 +39,17 @@ Extrahiere aus der Spracheingabe folgende Informationen:
 === BEKANNTE AUFTRAGGEBER (NUR DIESE SIND GÜLTIG!) ===
 {clients}
 
-=== BEKANNTE THEMEN (falls vorhanden, nutze exakte Schreibweise) ===
+=== BEKANNTE THEMEN (nutze exakte Schreibweise wenn phonetisch ähnlich!) ===
 {themes}
 
 KRITISCH - THEMA ERKENNUNG:
 - Wenn "Thema X" oder "Thema ist X" gesagt wird, extrahiere X als thema!
 - Thema kann auch ein unbekannter Name sein (nicht nur aus der Liste)
 - "Thema Lotus" → thema = "Lotus"
+- PHONETISCHE KORREKTUR: Wenn ein gesprochener Name ähnlich klingt wie ein bekanntes Thema, nutze die exakte Schreibweise!
+  - "Hakobo" → "Hakobu" (wenn "Hakobu" bekannt ist)
+  - "Nieva"/"Niva" → "Niwa" (wenn "Niwa" bekannt ist)
+  - "Air Liquid" → "Airliquide" (wenn "Airliquide" bekannt ist)
 
 KRITISCH - AUFTRAGGEBER ERKENNUNG:
 - Der Auftraggeber MUSS einer aus der obigen Liste sein!
@@ -204,12 +208,14 @@ Extrahiere NUR die fehlenden Felder aus der Antwort.
 === BEKANNTE AUFTRAGGEBER (NUR DIESE SIND GÜLTIG!) ===
 {clients}
 
-=== BEKANNTE THEMEN (falls vorhanden, nutze exakte Schreibweise) ===
+=== BEKANNTE THEMEN (nutze exakte Schreibweise wenn phonetisch ähnlich!) ===
 {themes}
 
 KRITISCHE REGELN FÜR THEMA:
 - Thema kann JEDER Name sein (auch wenn nicht in der Liste!)
-- Wenn bekanntes Thema phonetisch ähnlich, nutze exakte Schreibweise
+- PHONETISCHE KORREKTUR: Wenn ein gesprochener Name ähnlich klingt wie ein bekanntes Thema, nutze die exakte Schreibweise!
+  - "Hakobo" → "Hakobu" (wenn "Hakobu" bekannt ist)
+  - "Nieva"/"Niva" → "Niwa" (wenn "Niwa" bekannt ist)
 
 KRITISCHE REGELN FÜR AUFTRAGGEBER:
 - Der Auftraggeber MUSS einer aus der obigen Liste sein!
