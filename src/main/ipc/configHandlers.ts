@@ -17,7 +17,7 @@ import {
   type AppSettings
 } from '../services/config'
 import { scanDirectory, type ScannedFile } from '../services/fileScanner'
-import { validatePath, validateExcelPath } from '../utils/pathValidator'
+import { validateExcelPath } from '../utils/pathValidator'
 import {
   FilePathSchema,
   ExcelPathSchema,
