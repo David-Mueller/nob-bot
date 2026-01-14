@@ -28,4 +28,4 @@ npm-debug.log*
 Aktivitaetenlisten/
 
 # Backup files
-backups/
+backups/coverage/

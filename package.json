@@ -12,7 +12,11 @@
     "preview": "electron-vite preview",
     "build:win": "electron-vite build && electron-builder --win --x64",
     "build:win:clean": "rm -rf node_modules && pnpm install && electron-vite build && electron-builder --win --x64",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@langchain/core": "^1.1.12",
@@ -32,12 +36,16 @@
     "@types/glob": "^9.0.0",
     "@types/node": "^22.10.5",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@vitest/coverage-v8": "^4.0.17",
+    "@vue/test-utils": "^2.4.6",
     "electron": "^39.0.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^5.0.0",
+    "happy-dom": "^20.1.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.3",
     "vite": "^6.0.7",
+    "vitest": "^4.0.17",
     "vue-tsc": "^2.2.0"
   },
   "build": {
