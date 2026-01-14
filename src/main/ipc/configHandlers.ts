@@ -2,6 +2,16 @@ import { ipcMain, dialog } from 'electron'
 import { stat, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { getLogFilePath, readLogFile } from '../services/debugLog'
+
+// Redact sensitive fields before logging to prevent API key exposure
+function sanitizeForLogging(obj: Record<string, unknown>): Record<string, unknown> {
+  const sanitized = { ...obj }
+  if ('openaiApiKey' in sanitized) {
+    sanitized.openaiApiKey = '[REDACTED]'
+  }
+  return sanitized
+}
+
 import {
   loadConfig,
   saveConfig,
@@ -188,9 +198,15 @@ export function registerConfigHandlers(): void {
     async (_event, updates: unknown): Promise<AppSettings> => {
       try {
         const validatedUpdates = SettingsUpdateSchema.parse(updates)
+        // Log sanitized updates for debugging (API key redacted)
+        console.log(
+          '[Config] Updating settings:',
+          JSON.stringify(sanitizeForLogging(validatedUpdates as Record<string, unknown>))
+        )
         return await updateSettings(validatedUpdates)
       } catch (err) {
-        console.error('[Config] Invalid settings update:', err)
+        // Don't log raw error as it may contain sensitive input data from Zod
+        console.error('[Config] Invalid settings update')
         throw err
       }
     }

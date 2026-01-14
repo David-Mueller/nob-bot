@@ -1,3 +1,4 @@
+import { stat } from 'fs/promises'
 import { loadWorkbook, saveWorkbook, type Workbook, type Sheet } from './workbook'
 import { createBackup } from './backup'
 import { validateExcelFile } from './excel'
@@ -17,8 +18,9 @@ const MONTH_NAMES = [
   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
 ]
 
-// Cache for loaded glossars
-const glossarCache = new Map<string, Glossar>()
+// Cache for loaded glossars with mtime for invalidation
+type CacheEntry = { glossar: Glossar; mtime: number }
+const glossarCache = new Map<string, CacheEntry>()
 
 /**
  * Normalize a string for lookup (lowercase, trim, remove extra spaces)
@@ -39,12 +41,16 @@ function getCellString(sheet: Sheet, row: number, col: number): string {
  * Load glossar from an Excel file's "Glossar" sheet.
  */
 export async function loadGlossar(xlsxPath: string): Promise<Glossar | null> {
-  if (glossarCache.has(xlsxPath)) {
-    return glossarCache.get(xlsxPath)!
-  }
-
   try {
     await validateExcelFile(xlsxPath)
+
+    // Check mtime for cache invalidation
+    const stats = await stat(xlsxPath)
+    const cached = glossarCache.get(xlsxPath)
+    if (cached && cached.mtime === stats.mtimeMs) {
+      return cached.glossar
+    }
+
     const workbook = await loadWorkbook(xlsxPath)
 
     // Find "Glossar" sheet (case-insensitive)
@@ -106,7 +112,7 @@ export async function loadGlossar(xlsxPath: string): Promise<Glossar | null> {
     }
 
     const glossar: Glossar = { eintraege, byKategorie, lookupMap }
-    glossarCache.set(xlsxPath, glossar)
+    glossarCache.set(xlsxPath, { glossar, mtime: stats.mtimeMs })
     console.log(`[Glossar] Loaded ${eintraege.length} entries from ${xlsxPath}`)
 
     return glossar

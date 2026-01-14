@@ -16,6 +16,11 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024
  * Validate Excel file before processing.
  */
 export async function validateExcelFile(filePath: string): Promise<void> {
+  // Path traversal check to prevent directory escape attacks
+  if (filePath.includes('..')) {
+    throw new Error('Path traversal not allowed')
+  }
+
   if (!filePath.match(/\.(xlsx|xls)$/i)) {
     throw new Error('Invalid file extension. Only .xlsx and .xls files are allowed.')
   }

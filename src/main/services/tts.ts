@@ -14,6 +14,7 @@ import { debugLog } from './debugLog'
 export type TTSVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
 
 const TTS_API_URL = 'https://api.openai.com/v1/audio/speech'
+const MAX_MEMORY_CACHE_SIZE = 50
 
 // In-memory cache for fast access
 const memoryCache = new Map<string, ArrayBuffer>()
@@ -30,7 +31,7 @@ function getCacheDir(): string {
 
 // Generate cache key from text and voice
 function getCacheKey(text: string, voice: TTSVoice): string {
-  const hash = createHash('md5').update(`${voice}:${text}`).digest('hex')
+  const hash = createHash('sha256').update(`${voice}:${text}`).digest('hex')
   return hash
 }
 
@@ -92,6 +93,11 @@ export async function speak(
   if (diskCached) {
     // Store in memory cache for faster subsequent access
     memoryCache.set(cacheKey, diskCached)
+    // Evict oldest entry when cache exceeds limit
+    if (memoryCache.size > MAX_MEMORY_CACHE_SIZE) {
+      const firstKey = memoryCache.keys().next().value
+      if (firstKey) memoryCache.delete(firstKey)
+    }
     return diskCached
   }
 
@@ -129,6 +135,11 @@ export async function speak(
 
   // Store in both caches
   memoryCache.set(cacheKey, audioData)
+  // Evict oldest entry when cache exceeds limit
+  if (memoryCache.size > MAX_MEMORY_CACHE_SIZE) {
+    const firstKey = memoryCache.keys().next().value
+    if (firstKey) memoryCache.delete(firstKey)
+  }
   saveToDiskCache(cacheKey, audioData) // Non-blocking
 
   return audioData
@@ -156,12 +167,11 @@ export async function clearCache(): Promise<number> {
     const dir = getCacheDir()
     if (existsSync(dir)) {
       const files = await readdir(dir)
-      for (const file of files) {
-        if (file.endsWith('.mp3')) {
-          await rm(join(dir, file))
-          deletedCount++
-        }
-      }
+      const deletePromises = files
+        .filter(f => f.endsWith('.mp3'))
+        .map(f => rm(join(dir, f)).catch(() => {}))
+      await Promise.all(deletePromises)
+      deletedCount = deletePromises.length
       debugLog('TTS', `Deleted ${deletedCount} cached audio files`)
     }
   } catch (err) {

@@ -75,16 +75,21 @@ export function useAudioRecorder() {
       })
 
       // Set up audio analyser for visualization
-      audioContext = new AudioContext()
-      analyser = audioContext.createAnalyser()
-      analyser.fftSize = 256
-      analyser.smoothingTimeConstant = 0.7
+      try {
+        audioContext = new AudioContext()
+        analyser = audioContext.createAnalyser()
+        analyser.fftSize = 256
+        analyser.smoothingTimeConstant = 0.7
 
-      const source = audioContext.createMediaStreamSource(stream)
-      source.connect(analyser)
+        const source = audioContext.createMediaStreamSource(stream)
+        source.connect(analyser)
 
-      // Start level monitoring
-      updateAudioLevels()
+        // Start level monitoring
+        updateAudioLevels()
+      } catch (err) {
+        console.error('AudioContext creation failed:', err)
+        // Continue without visualization - recording still works
+      }
 
       // Prefer webm for Whisper compatibility
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
