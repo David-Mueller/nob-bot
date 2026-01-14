@@ -9,6 +9,14 @@
 - **Flüssigere Aufnahme-UI**: Das Aufnahme-Popup öffnet sich jetzt sanft ohne Content-Jump. Animationen mit CSS transitions.
 - **Fortschrittsanzeige**: Einträge in der Liste zeigen einen Ladebalken während Speichern (grün) oder Bearbeiten (amber).
 - **TTS Audio-Cache**: Die gesprochenen Texte werden beim ersten Mal auf der Festplatte gespeichert und bei Wiederholung vom lokalen Cache wiedergegeben. In den Einstellungen kann der Cache manuell geleert werden.
+- **Debug-Logging**: Bei Problemen kann ein detailliertes Log eingesehen werden (Einstellungen → Debug-Log), was die Fehlersuche erleichtert.
+- **Glossar aus Daten generieren**: Auftraggeber und Themen können automatisch aus bestehenden Excel-Dateien extrahiert werden.
+- **Entwürfe bleiben erhalten**: Nicht gespeicherte Aktivitäten überleben jetzt einen App-Neustart.
+
+### Hinweise
+
+- Keine Aktion erforderlich - alle bestehenden Einstellungen bleiben erhalten
+- Bei Problemen: App neu starten und ggf. Debug-Log prüfen
 
 ### Technische Änderungen
 
