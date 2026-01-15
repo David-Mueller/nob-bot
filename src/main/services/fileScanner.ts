@@ -1,5 +1,6 @@
 import { glob } from 'glob'
 import { join, basename } from 'path'
+import * as fs from 'fs'
 import { ChatOpenAI } from '@langchain/openai'
 import { z } from 'zod'
 
@@ -60,10 +61,76 @@ export async function extractFileInfo(filename: string): Promise<{ auftraggeber:
 
 export async function scanDirectory(basePath: string): Promise<ScannedFile[]> {
   console.log(`[Scanner] Scanning: ${basePath}`)
+  console.log(`[Scanner] Platform: ${process.platform}`)
+
+  if (!basePath) {
+    console.log('[Scanner] No base path provided')
+    return []
+  }
+
+  // Check if base path exists
+  const pathExists = fs.existsSync(basePath)
+  console.log(`[Scanner] Path exists: ${pathExists}`)
+
+  if (!pathExists) {
+    console.error(`[Scanner] Base path does not exist: ${basePath}`)
+    return []
+  }
+
+  // Debug: list all files in directory
+  try {
+    const allFiles = fs.readdirSync(basePath)
+    console.log(`[Scanner] All files in directory (${allFiles.length}):`, allFiles)
+    const xlsxFiles = allFiles.filter(f => f.toLowerCase().endsWith('.xlsx'))
+    console.log(`[Scanner] All xlsx files (${xlsxFiles.length}):`, xlsxFiles)
+    const lvFiles = xlsxFiles.filter(f => f.toLowerCase().startsWith('lv'))
+    console.log(`[Scanner] Files matching LV*.xlsx (${lvFiles.length}):`, lvFiles)
+  } catch (err) {
+    console.error('[Scanner] Failed to list directory:', err)
+  }
 
   // Glob pattern for LV*.xlsx files
-  const pattern = join(basePath, 'LV*.xlsx')
-  const files = await glob(pattern, { windowsPathsNoEscape: true })
+  // IMPORTANT: Glob requires forward slashes, even on Windows
+  const normalizedPath = basePath.replace(/\\/g, '/').replace(/\/$/, '')
+  const pattern = `${normalizedPath}/LV*.xlsx`
+  console.log(`[Scanner] Original basePath: "${basePath}"`)
+  console.log(`[Scanner] Normalized path: "${normalizedPath}"`)
+  console.log(`[Scanner] Glob pattern: "${pattern}"`)
+
+  let files: string[]
+  try {
+    // Try glob first
+    console.log(`[Scanner] Calling glob...`)
+    const result = await glob(pattern, {
+      windowsPathsNoEscape: true,
+      nocase: true  // Case-insensitive for Windows filesystem
+    })
+    console.log(`[Scanner] Glob result type: ${typeof result}, isArray: ${Array.isArray(result)}`)
+    console.log(`[Scanner] Glob raw result:`, result)
+    files = Array.isArray(result) ? result : []
+
+    // If glob returns empty but we know files exist, use fallback
+    if (files.length === 0) {
+      console.log(`[Scanner] Glob returned empty, using fs.readdirSync fallback...`)
+      const allFiles = fs.readdirSync(basePath)
+      const matchingFiles = allFiles.filter(f => /^lv.*\.xlsx$/i.test(f))
+      files = matchingFiles.map(f => join(basePath, f))
+      console.log(`[Scanner] Fallback found ${files.length} files:`, files)
+    }
+  } catch (err) {
+    console.error('[Scanner] Glob error:', err)
+    // Fallback to fs.readdirSync on error
+    try {
+      console.log(`[Scanner] Using fs.readdirSync fallback due to error...`)
+      const allFiles = fs.readdirSync(basePath)
+      const matchingFiles = allFiles.filter(f => /^lv.*\.xlsx$/i.test(f))
+      files = matchingFiles.map(f => join(basePath, f))
+      console.log(`[Scanner] Fallback found ${files.length} files`)
+    } catch (fallbackErr) {
+      console.error('[Scanner] Fallback also failed:', fallbackErr)
+      return []
+    }
+  }
 
   console.log(`[Scanner] Found ${files.length} files`)
 

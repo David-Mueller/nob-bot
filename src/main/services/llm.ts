@@ -3,37 +3,58 @@ import { z } from 'zod'
 import { config } from 'dotenv'
 import { app } from 'electron'
 import { join } from 'path'
+import { getApiKey } from './config'
+import type { Activity } from '@shared/types'
 
-// Load .env from app root
+// Load .env from app root (fallback for API key)
 config({ path: join(app.getAppPath(), '.env') })
 
-// Schema for parsed activity - no .default() for OpenAI compatibility
-export const ActivitySchema = z.object({
+// Re-export Activity type for consumers that import from this module
+export type { Activity }
+
+// Schema for LLM parsing - allows nullable for fields LLM might not extract
+// Note: km and auslagen are nullable here for LLM, but converted to non-nullable numbers at boundary
+const LLMActivitySchema = z.object({
   auftraggeber: z.string().nullable().describe('Name des Auftraggebers/Firma'),
   thema: z.string().nullable().describe('Kunde, Kontakt oder Projekt'),
   beschreibung: z.string().describe('Beschreibung der Tätigkeit'),
-  stunden: z.number().nullable().describe('Investierte Zeit in Stunden (0.5 = halbe Stunde)'),
+  minuten: z.number().nullable().describe('Investierte Zeit in MINUTEN (30 = halbe Stunde, 60 = eine Stunde)'),
   km: z.number().nullable().describe('Gefahrene Kilometer, 0 wenn nicht erwähnt'),
   auslagen: z.number().nullable().describe('Kostenauslagen in Euro, 0 wenn nicht erwähnt'),
   datum: z.string().nullable().describe('Datum im Format YYYY-MM-DD, null = heute')
 })
 
-export type Activity = z.infer<typeof ActivitySchema>
-
 const SYSTEM_PROMPT = `Du bist ein Assistent zur Erfassung von Arbeitsaktivitäten eines selbstständigen Vertreters.
 Heute ist: {today}
 
 Extrahiere aus der Spracheingabe folgende Informationen:
-- auftraggeber: Name der Firma, für die gearbeitet wird (z.B. "IDT", "ABC")
-- thema: Kunde, Kontakt oder Projekt-Name
+- auftraggeber: Name der Firma, für die gearbeitet wird (z.B. "ACME GmbH", "Beispiel AG")
+- thema: Kunde, Kontakt oder Projekt-Name (NICHT der Auftraggeber!)
 - beschreibung: Was wurde getan?
-- stunden: Zeitaufwand als Dezimalzahl (z.B. 0.5 für "halbe Stunde", 0.25 für "Viertelstunde", 0.75 für "dreiviertel Stunde")
+- minuten: Zeitaufwand in MINUTEN als ganze Zahl (z.B. 5 für "5 Minuten", 30 für "halbe Stunde", 60 für "eine Stunde", 15 für "Viertelstunde")
 - km: Gefahrene Kilometer (0 wenn nicht erwähnt)
 - auslagen: Kosten in Euro (0 wenn nicht erwähnt)
 - datum: Datum im Format YYYY-MM-DD (KRITISCH - siehe unten)
 
-Bekannte Auftraggeber: {clients}
-Bekannte Themen: {themes}
+=== BEKANNTE AUFTRAGGEBER (NUR DIESE SIND GÜLTIG!) ===
+{clients}
+
+=== BEKANNTE THEMEN (nutze exakte Schreibweise wenn phonetisch ähnlich!) ===
+{themes}
+
+KRITISCH - THEMA ERKENNUNG:
+- Wenn "Thema X" oder "Thema ist X" gesagt wird, extrahiere X als thema!
+- Thema kann auch ein unbekannter Name sein (nicht nur aus der Liste)
+- "Thema Lotus" → thema = "Lotus"
+- PHONETISCHE KORREKTUR: Wenn ein gesprochener Name ähnlich klingt wie ein bekanntes Thema, nutze die exakte Schreibweise!
+  - "Hakobo" → "Hakobu" (wenn "Hakobu" bekannt ist)
+  - "Nieva"/"Niva" → "Niwa" (wenn "Niwa" bekannt ist)
+  - "Air Liquid" → "Airliquide" (wenn "Airliquide" bekannt ist)
+
+KRITISCH - AUFTRAGGEBER ERKENNUNG:
+- Der Auftraggeber MUSS einer aus der obigen Liste sein!
+- Erkenne phonetisch ähnliche Namen: "EDT"/"E.D.T." → "IDT", "Lakova"/"la Coba"/"La Cobra" → "Lakowa"
+- Buchstabierte Namen wie "I-D-T" → entsprechender Name aus der Liste
 
 KRITISCH - DATUM EXTRAKTION:
 Das Datum bestimmt, in welches Excel-Sheet geschrieben wird! Erkenne diese Muster:
@@ -54,10 +75,10 @@ Der Sprecher korrigiert sich oft während der Aufnahme! Achte auf Phrasen wie:
 - "Moment, ich meinte..." → Nutze die Korrektur
 - "Nein, falsch, es war..." → Nutze den korrigierten Wert
 - "Nicht X sondern Y" → Nutze Y
-Beispiel: "Aktivität für EDT... ach nein, es war für Erdbeerland" → auftraggeber = "Erdbeerland"
+Beispiel: "Aktivität für Firma A... ach nein, es war für Firma B" → auftraggeber = "Firma B"
 
 Weitere Regeln:
-- Zeitangaben: "halbe Stunde" = 0.5, "Viertelstunde" = 0.25, "eine Stunde" = 1.0
+- Zeitangaben IN MINUTEN: "5 Minuten" = 5, "halbe Stunde" = 30, "Viertelstunde" = 15, "eine Stunde" = 60
 - Wenn etwas nicht klar ist, setze null
 - Beschreibung: Kern der Tätigkeit zusammenfassen (ohne Korrekturen/Versprecher)
 
@@ -73,10 +94,10 @@ let llm: ChatOpenAI | null = null
 // gpt-4.1-mini struggles with self-corrections like "ach nein, es war für X"
 const DEFAULT_MODEL = 'gpt-4o'
 
-export function initLLM(): void {
-  const apiKey = process.env.OPENAI_API_KEY
+export async function initLLM(): Promise<void> {
+  const apiKey = await getApiKey()
   if (!apiKey) {
-    throw new Error('OPENAI_API_KEY not found in environment')
+    throw new Error('OPENAI_API_KEY not found in settings or environment')
   }
 
   const modelName = process.env.OPENAI_MODEL || DEFAULT_MODEL
@@ -95,14 +116,14 @@ export async function parseActivity(
   themes: string[] = []
 ): Promise<Activity> {
   if (!llm) {
-    initLLM()
+    await initLLM()
   }
 
   if (!llm) {
     throw new Error('LLM not initialized')
   }
 
-  const structuredLLM = llm.withStructuredOutput(ActivitySchema)
+  const structuredLLM = llm.withStructuredOutput(LLMActivitySchema)
 
   const today = new Date().toLocaleDateString('de-DE', {
     weekday: 'long',
@@ -133,8 +154,9 @@ export async function parseActivity(
   } as Activity
 }
 
-export function isLLMReady(): boolean {
-  return llm !== null || !!process.env.OPENAI_API_KEY
+export async function isLLMReady(): Promise<boolean> {
+  const apiKey = await getApiKey()
+  return llm !== null || !!apiKey
 }
 
 const CORRECTION_PROMPT = `Du bist ein Assistent zur Korrektur von Arbeitsaktivitäten.
@@ -156,7 +178,7 @@ KORREKTUR-ANWEISUNG:
 Beispiele:
 - "es waren doch 500km" → nur km ändern
 - "nicht IDT sondern LOTUS" → nur auftraggeber ändern
-- "das war eine Stunde, nicht eine halbe" → nur stunden ändern
+- "das war eine Stunde, nicht eine halbe" → nur minuten ändern
 - "Thema war eigentlich Hakobu" → nur thema ändern
 - "das war im Dezember 2025" → datum auf 2025-12-15 ändern
 - "das war letzten Monat" → datum auf Vormonat ändern
@@ -169,20 +191,143 @@ Wenn nur Monat genannt wird, nutze den 15. als Tag.
 
 Gib die vollständige aktualisierte Aktivität zurück.`
 
-export async function parseCorrection(
+const FOLLOWUP_PROMPT = `Du bist ein Assistent zur Erfassung von Arbeitsaktivitäten.
+Heute ist: {today}
+
+Der Benutzer hat eine Aktivität erfasst, aber folgende Felder fehlen: {missingFields}
+
+BESTEHENDE AKTIVITÄT:
+{existingActivity}
+
+RÜCKFRAGE WAR: {question}
+
+BENUTZERANTWORT: {userAnswer}
+
+Extrahiere NUR die fehlenden Felder aus der Antwort.
+
+=== BEKANNTE AUFTRAGGEBER (NUR DIESE SIND GÜLTIG!) ===
+{clients}
+
+=== BEKANNTE THEMEN (nutze exakte Schreibweise wenn phonetisch ähnlich!) ===
+{themes}
+
+KRITISCHE REGELN FÜR THEMA:
+- Thema kann JEDER Name sein (auch wenn nicht in der Liste!)
+- PHONETISCHE KORREKTUR: Wenn ein gesprochener Name ähnlich klingt wie ein bekanntes Thema, nutze die exakte Schreibweise!
+  - "Hakobo" → "Hakobu" (wenn "Hakobu" bekannt ist)
+  - "Nieva"/"Niva" → "Niwa" (wenn "Niwa" bekannt ist)
+
+KRITISCHE REGELN FÜR AUFTRAGGEBER:
+- Der Auftraggeber MUSS einer aus der obigen Liste sein!
+- Erkenne phonetisch ähnliche Namen und mappe sie auf die bekannte Schreibweise:
+  - "EDT", "E.D.T.", "Edete" → wahrscheinlich "IDT"
+  - "Lakova", "la Coba", "La Cobra", "Lakowa" → "Lakowa"
+  - Buchstabierte Namen wie "I-D-T" oder "E.D.T." → entsprechender Name aus der Liste
+- Wenn unsicher, wähle den phonetisch ähnlichsten bekannten Auftraggeber
+
+WEITERE REGELN:
+- auftraggeber = Firma (aus BEKANNTE AUFTRAGGEBER)
+- thema = Kunde, Kontakt oder Projekt (aus BEKANNTE THEMEN)
+- Zeitangaben IN MINUTEN: "5 Minuten" = 5, "halbe Stunde" = 30, "Viertelstunde" = 15, "eine Stunde" = 60
+- Lasse alle anderen Felder auf den bestehenden Werten
+
+Gib die vollständige aktualisierte Aktivität zurück.`
+
+export const FOLLOWUP_QUESTIONS: Record<string, string> = {
+  auftraggeber: 'Auftraggeber',
+  thema: 'Thema/Projekt',
+  minuten: 'Dauer'
+}
+
+// Build combined question for all missing fields
+export function buildFollowUpQuestion(missingFields: string[]): string {
+  if (missingFields.length === 0) return ''
+
+  const labels = missingFields.map(f => FOLLOWUP_QUESTIONS[f] || f)
+
+  if (missingFields.length === 1) {
+    const field = missingFields[0]
+    if (field === 'auftraggeber') return 'Für welchen Auftraggeber war das?'
+    if (field === 'thema') return 'Um welches Thema oder Projekt ging es?'
+    if (field === 'minuten') return 'Wie lange hat das gedauert?'
+    return `Was ist ${labels[0]}?`
+  }
+
+  return `Was fehlt noch: ${labels.join(', ')}?`
+}
+
+export async function parseFollowUpAnswer(
   existingActivity: Activity,
-  correctionTranscript: string,
-  clients: string[] = []
+  userAnswer: string,
+  missingFields: string[],
+  question: string,
+  clients: string[] = [],
+  themes: string[] = []
 ): Promise<Activity> {
   if (!llm) {
-    initLLM()
+    await initLLM()
   }
 
   if (!llm) {
     throw new Error('LLM not initialized')
   }
 
-  const structuredLLM = llm.withStructuredOutput(ActivitySchema)
+  const structuredLLM = llm.withStructuredOutput(LLMActivitySchema)
+
+  const today = new Date().toLocaleDateString('de-DE', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  })
+
+  const activityStr = Object.entries(existingActivity)
+    .map(([k, v]) => `- ${k}: ${v ?? 'nicht angegeben'}`)
+    .join('\n')
+
+  const prompt = FOLLOWUP_PROMPT
+    .replace('{today}', today)
+    .replace('{missingFields}', missingFields.join(', '))
+    .replace('{existingActivity}', activityStr)
+    .replace('{question}', question)
+    .replace('{userAnswer}', userAnswer)
+    .replace('{clients}', clients.length > 0 ? clients.join(', ') : 'keine bekannt')
+    .replace('{themes}', themes.length > 0 ? themes.join(', ') : 'keine bekannt')
+
+  const result = await structuredLLM.invoke([
+    { role: 'system', content: prompt },
+    { role: 'user', content: userAnswer }
+  ])
+
+  const todayISO = new Date().toISOString().split('T')[0]
+
+  // Merge: LLM result overwrites existing ONLY if not null
+  // This preserves existing values when LLM returns null for non-asked fields
+  return {
+    auftraggeber: result.auftraggeber ?? existingActivity.auftraggeber,
+    thema: result.thema ?? existingActivity.thema,
+    beschreibung: result.beschreibung || existingActivity.beschreibung,
+    minuten: result.minuten ?? existingActivity.minuten,
+    datum: result.datum ?? existingActivity.datum ?? todayISO,
+    km: result.km ?? existingActivity.km ?? 0,
+    auslagen: result.auslagen ?? existingActivity.auslagen ?? 0
+  }
+}
+
+export async function parseCorrection(
+  existingActivity: Activity,
+  correctionTranscript: string,
+  clients: string[] = []
+): Promise<Activity> {
+  if (!llm) {
+    await initLLM()
+  }
+
+  if (!llm) {
+    throw new Error('LLM not initialized')
+  }
+
+  const structuredLLM = llm.withStructuredOutput(LLMActivitySchema)
 
   const today = new Date().toLocaleDateString('de-DE', {
     weekday: 'long',
@@ -206,14 +351,17 @@ export async function parseCorrection(
     { role: 'user', content: correctionTranscript }
   ])
 
-  // Behalte das ursprüngliche Datum wenn LLM keines zurückgibt
-  // Falls auch das ursprüngliche null ist, nutze heute
+  // Merge: LLM result overwrites existing ONLY if not null
+  // This preserves existing values when LLM returns null for unchanged fields
   const todayISO = new Date().toISOString().split('T')[0]
 
   return {
-    ...result,
+    auftraggeber: result.auftraggeber ?? existingActivity.auftraggeber,
+    thema: result.thema ?? existingActivity.thema,
+    beschreibung: result.beschreibung || existingActivity.beschreibung,
+    minuten: result.minuten ?? existingActivity.minuten,
     datum: result.datum ?? existingActivity.datum ?? todayISO,
-    km: result.km ?? 0,
-    auslagen: result.auslagen ?? 0
-  } as Activity
+    km: result.km ?? existingActivity.km ?? 0,
+    auslagen: result.auslagen ?? existingActivity.auslagen ?? 0
+  }
 }

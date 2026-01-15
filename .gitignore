@@ -1,9 +1,11 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 
 # Build output
 out/
 dist/
+coverage/
 
 # Environment variables
 .env
@@ -28,4 +30,4 @@ npm-debug.log*
 Aktivitaetenlisten/
 
 # Backup files
-backups/
+backups/coverage/

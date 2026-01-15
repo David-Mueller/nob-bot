@@ -1,8 +1,19 @@
 # FEAT-014: Rückfragen bei fehlenden Feldern
 
+**Status: ✅ Implementiert**
+
 ## Übersicht
 
 Wenn nach der LLM-Analyse Pflichtfelder fehlen (Auftraggeber, Thema, Zeit), stellt die App automatisch Rückfragen - idealerweise per Voice, wenn die Eingabe auch per Voice war.
+
+## Implementiert
+
+- [x] Automatische Erkennung fehlender Pflichtfelder (auftraggeber, thema, stunden)
+- [x] Automatische Voice-Rückfragen mit RecordingWindow
+- [x] LLM-basiertes Parsing der Follow-up Antworten
+- [x] Iteratives Nachfragen bis alle Felder gefüllt
+- [x] Anzeige der Rückfrage im Chat
+- [ ] Text-to-Speech (TTS) - optional, nicht implementiert
 
 ## Pflichtfelder
 

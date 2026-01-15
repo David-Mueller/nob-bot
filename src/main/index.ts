@@ -1,41 +1,51 @@
 import { config } from 'dotenv'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, nativeImage, globalShortcut } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { createTray, destroyTray } from './tray'
 import { registerHotkeys, unregisterHotkeys } from './hotkey'
 import { registerWhisperHandlers } from './ipc/whisperHandlers'
 import { registerLLMHandlers } from './ipc/llmHandlers'
 import { registerExcelHandlers } from './ipc/excelHandlers'
 import { registerConfigHandlers } from './ipc/configHandlers'
-import { loadConfig } from './services/config'
+import { registerGlossarHandlers, reloadGlossar } from './ipc/glossarHandlers'
+import { registerTTSHandlers } from './ipc/ttsHandlers'
+import { registerDraftsHandlers } from './ipc/draftsHandlers'
+import { loadConfig, getSettings } from './services/config'
+import { initLogging, getLogFilePath, debugLog } from './services/debugLog'
 
 // Load .env early
 config()
 
+// Initialize logging (always writes to file)
+initLogging()
+
+// Debug mode: opens DevTools on start (--debug or DEBUG=1)
+const openDevTools = process.argv.includes('--debug') || process.env.DEBUG === '1'
+
+debugLog('Startup', `Platform: ${process.platform}`)
+debugLog('Startup', `Electron: ${process.versions.electron}, Node: ${process.versions.node}`)
+debugLog('Startup', `App path: ${app.getAppPath()}`)
+debugLog('Startup', `Log file: ${getLogFilePath()}`)
+
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): BrowserWindow {
+  const iconPath = is.dev
+    ? join(app.getAppPath(), 'resources', 'icon.png')
+    : join(process.resourcesPath, 'resources', 'icon.png')
+
   mainWindow = new BrowserWindow({
-    width: 500,
-    height: 400,
-    show: false,
+    width: 720,
+    height: 650,
+    show: true,
     autoHideMenuBar: true,
-    skipTaskbar: false,
     resizable: true,
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false
-    }
-  })
-
-  // Minimize to tray instead of closing
-  mainWindow.on('close', (event) => {
-    if (!isQuitting) {
-      event.preventDefault()
-      mainWindow?.hide()
     }
   })
 
@@ -50,37 +60,63 @@ function createWindow(): BrowserWindow {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
+  // Open DevTools only if explicitly requested
+  if (openDevTools) {
+    mainWindow.webContents.openDevTools()
+  }
+
   return mainWindow
 }
 
 app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('com.aktivitaeten.app')
+  electronApp.setAppUserModelId('com.nobcon.app')
+  app.setName('NoB-Con Aktivitäten')
+
+  // Set dock icon on macOS
+  if (process.platform === 'darwin' && app.dock) {
+    const iconPath = is.dev
+      ? join(app.getAppPath(), 'resources', 'icon.png')
+      : join(process.resourcesPath, 'resources', 'icon.png')
+    const icon = nativeImage.createFromPath(iconPath)
+    if (!icon.isEmpty()) {
+      app.dock.setIcon(icon)
+    }
+  }
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // Load config FIRST (before window and handlers)
+  // Load config FIRST
   await loadConfig()
 
   const window = createWindow()
 
-  // Create tray icon
-  createTray(window)
-
   // Register global hotkey
-  registerHotkeys(window)
+  const settings = await getSettings()
+  registerHotkeys(window, settings.hotkey)
 
   // Register IPC handlers
   registerWhisperHandlers(window)
   registerLLMHandlers()
   registerExcelHandlers()
   registerConfigHandlers()
+  registerGlossarHandlers()
+  registerTTSHandlers()
+  registerDraftsHandlers()
 
-  // In dev mode, show window immediately for testing
-  if (is.dev) {
-    window.show()
-  }
+  // Non-blocking glossar load
+  reloadGlossar().catch((err) => {
+    console.error('[Startup] Glossar load failed:', err)
+  })
+
+  // DevTools shortcut (Ctrl+Shift+I / Cmd+Option+I)
+  globalShortcut.register('CommandOrControl+Shift+I', () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow()
+    if (focusedWindow) {
+      focusedWindow.webContents.toggleDevTools()
+    }
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -89,17 +125,11 @@ app.whenReady().then(async () => {
   })
 })
 
-// Track quit state
-let isQuitting = false
-
 app.on('before-quit', () => {
-  isQuitting = true
   unregisterHotkeys()
-  destroyTray()
+  globalShortcut.unregisterAll()
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  app.quit()
 })

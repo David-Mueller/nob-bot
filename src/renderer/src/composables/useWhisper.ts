@@ -1,7 +1,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 
 export type WhisperStatus = 'unloaded' | 'loading' | 'ready' | 'transcribing' | 'error'
-export type WhisperMode = 'cloud' | 'local' | 'none'
+export type WhisperMode = 'cloud' | 'none'
 
 export type TranscribeResult = {
   text: string
@@ -27,7 +27,7 @@ export function useWhisper() {
     }
   }
 
-  const init = async (model?: string): Promise<boolean> => {
+  const init = async (): Promise<boolean> => {
     if (!window.api?.whisper) {
       error.value = 'Whisper API not available'
       status.value = 'error'
@@ -37,14 +37,13 @@ export function useWhisper() {
     try {
       error.value = null
       status.value = 'loading'
-      loadingProgress.value = 0
 
-      await window.api.whisper.init(model)
+      await window.api.whisper.init()
       status.value = 'ready'
       return true
     } catch (err) {
       console.error('Failed to init Whisper:', err)
-      error.value = err instanceof Error ? err.message : 'Failed to load Whisper model'
+      error.value = err instanceof Error ? err.message : 'OpenAI API key not configured'
       status.value = 'error'
       return false
     }

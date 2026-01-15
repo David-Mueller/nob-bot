@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { Activity, XlsxFileConfig, AppSettings, AppConfig, SaveResult, WhisperMode } from '@shared/types'
 
 type RecordingCallback = () => void
 type ProgressCallback = (progress: {
@@ -7,37 +8,13 @@ type ProgressCallback = (progress: {
   progress?: number
 }) => void
 
-interface TranscriptionResult {
+type TranscriptionResult = {
   text: string
-  chunks?: Array<{
-    text: string
-    timestamp: [number, number]
-  }>
+  language?: string
+  mode: WhisperMode
 }
 
-interface Activity {
-  auftraggeber: string | null
-  thema: string | null
-  beschreibung: string
-  stunden: number | null
-  km: number
-  auslagen: number
-  datum: string | null
-}
-
-interface XlsxFileConfig {
-  path: string
-  auftraggeber: string
-  jahr: number
-  active: boolean
-}
-
-interface AppConfig {
-  xlsxBasePath: string
-  xlsxFiles: XlsxFileConfig[]
-}
-
-interface ScannedFile {
+type ScannedFile = {
   path: string
   filename: string
   auftraggeber: string | null
@@ -55,8 +32,8 @@ const api = {
 
   // Whisper API
   whisper: {
-    init: (model?: string): Promise<void> => {
-      return ipcRenderer.invoke('whisper:init', model)
+    init: (): Promise<void> => {
+      return ipcRenderer.invoke('whisper:init')
     },
     transcribe: (pcmBuffer: ArrayBuffer, originalBlob?: ArrayBuffer): Promise<TranscriptionResult> => {
       return ipcRenderer.invoke('whisper:transcribe', pcmBuffer, originalBlob)
@@ -67,7 +44,7 @@ const api = {
     isLoading: (): Promise<boolean> => {
       return ipcRenderer.invoke('whisper:isLoading')
     },
-    getMode: (): Promise<'cloud' | 'local' | 'none'> => {
+    getMode: (): Promise<WhisperMode> => {
       return ipcRenderer.invoke('whisper:getMode')
     },
     onProgress: (callback: ProgressCallback): (() => void) => {
@@ -87,6 +64,14 @@ const api = {
     parseCorrection: (existingActivity: Activity, correctionTranscript: string): Promise<Activity> => {
       return ipcRenderer.invoke('llm:parseCorrection', existingActivity, correctionTranscript)
     },
+    parseFollowUp: (
+      existingActivity: Activity,
+      userAnswer: string,
+      missingFields: string[],
+      question: string
+    ): Promise<Activity> => {
+      return ipcRenderer.invoke('llm:parseFollowUp', existingActivity, userAnswer, missingFields, question)
+    },
     isReady: (): Promise<boolean> => {
       return ipcRenderer.invoke('llm:isReady')
     }
@@ -103,8 +88,11 @@ const api = {
     selectFile: (): Promise<string | null> => {
       return ipcRenderer.invoke('excel:selectFile')
     },
-    saveActivity: (activity: Activity): Promise<{ success: boolean; error?: string }> => {
+    saveActivity: (activity: Activity): Promise<SaveResult> => {
       return ipcRenderer.invoke('excel:saveActivity', activity)
+    },
+    openFile: (filePath: string): Promise<boolean> => {
+      return ipcRenderer.invoke('excel:openFile', filePath)
     },
     getActivities: (month: number): Promise<Array<{
       row: number
@@ -136,6 +124,9 @@ const api = {
     getBasePath: (): Promise<string> => {
       return ipcRenderer.invoke('config:getBasePath')
     },
+    browseFolder: (): Promise<string | null> => {
+      return ipcRenderer.invoke('config:browseFolder')
+    },
     scanFiles: (): Promise<ScannedFile[]> => {
       return ipcRenderer.invoke('config:scanFiles')
     },
@@ -156,6 +147,100 @@ const api = {
     },
     removeFile: (path: string): Promise<void> => {
       return ipcRenderer.invoke('config:removeFile', path)
+    },
+    getSettings: (): Promise<AppSettings> => {
+      return ipcRenderer.invoke('config:getSettings')
+    },
+    updateSettings: (updates: Partial<AppSettings>): Promise<AppSettings> => {
+      return ipcRenderer.invoke('config:updateSettings', updates)
+    },
+    debugInfo: (): Promise<{
+      basePath: string
+      pathExists: boolean
+      allFiles: string[]
+      xlsxFiles: string[]
+      lvFiles: string[]
+      error: string | null
+    }> => {
+      return ipcRenderer.invoke('config:debugInfo')
+    }
+  },
+
+  // TTS API
+  tts: {
+    speak: (text: string, voice?: string): Promise<Uint8Array> => {
+      return ipcRenderer.invoke('tts:speak', text, voice)
+    },
+    isReady: (): Promise<boolean> => {
+      return ipcRenderer.invoke('tts:isReady')
+    },
+    clearCache: (): Promise<number> => {
+      return ipcRenderer.invoke('tts:clearCache')
+    }
+  },
+
+  // Glossar API
+  glossar: {
+    load: (): Promise<boolean> => {
+      return ipcRenderer.invoke('glossar:load')
+    },
+    getKnownTerms: (): Promise<{
+      auftraggeber: string[]
+      themen: string[]
+      kunden: string[]
+    } | null> => {
+      return ipcRenderer.invoke('glossar:getKnownTerms')
+    },
+    normalize: (text: string): Promise<string> => {
+      return ipcRenderer.invoke('glossar:normalize', text)
+    },
+    getEntries: (): Promise<Array<{
+      kategorie: string
+      begriff: string
+      synonyme: string[]
+    }>> => {
+      return ipcRenderer.invoke('glossar:getEntries')
+    },
+    clearCache: (): Promise<void> => {
+      return ipcRenderer.invoke('glossar:clearCache')
+    },
+    createFromData: (filePath: string, auftraggeber: string): Promise<boolean> => {
+      return ipcRenderer.invoke('glossar:createFromData', filePath, auftraggeber)
+    }
+  },
+
+  // Drafts API
+  drafts: {
+    load: (): Promise<Array<{
+      id: number
+      activity: Activity
+      transcript: string
+      timestamp: string
+      saved: boolean
+    }>> => {
+      return ipcRenderer.invoke('drafts:load')
+    },
+    save: (drafts: Array<{
+      id: number
+      activity: Activity
+      transcript: string
+      timestamp: string
+      saved: boolean
+    }>): Promise<void> => {
+      return ipcRenderer.invoke('drafts:save', drafts)
+    },
+    clear: (): Promise<void> => {
+      return ipcRenderer.invoke('drafts:clear')
+    }
+  },
+
+  // Debug API
+  debug: {
+    getLogPath: (): Promise<string> => {
+      return ipcRenderer.invoke('debug:getLogPath')
+    },
+    readLog: (): Promise<string> => {
+      return ipcRenderer.invoke('debug:readLog')
     }
   }
 }

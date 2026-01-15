@@ -1,14 +1,14 @@
 # FEAT-011: Glossar-Sheet für Standardisierung
 
+**Status: ✅ Implementiert**
+
 ## Übersicht
 
-Jede Excel-Datei (.xlsx) enthält ein "Glossar"-Sheet mit standardisierten Schreibweisen für Themen, Kunden, Auftraggeber und andere Begriffe. Diese Schreibweisen werden bei der LLM-Verarbeitung und Speicherung automatisch angewendet.
+Jede Excel-Datei (.xlsx) enthält ein "Glossar"-Sheet mit standardisierten Schreibweisen für Themen, Kunden, Auftraggeber und andere Begriffe. Diese werden bei der LLM-Verarbeitung automatisch verwendet.
 
 ## Anforderungen
 
 ### Glossar-Sheet Struktur
-
-Das Sheet "Glossar" enthält folgende Spalten:
 
 | Spalte | Beschreibung | Beispiel |
 |--------|--------------|----------|
@@ -21,49 +21,26 @@ Das Sheet "Glossar" enthält folgende Spalten:
 ```
 Kategorie    | Begriff      | Synonyme
 -------------|--------------|----------------------------------
-Auftraggeber | IDT          | idt, Idt, IDT GmbH
-Auftraggeber | LOTUS        | lotus, Lotus, LOTUS GmbH
-Auftraggeber | ORLEN        | orlen, Orlen, PKN Orlen
-Kunde        | Krzysztof    | Kschischthoff, Krschischtoff, Christoph
-Kunde        | Szymański    | Schimansky, Schimanski, Szymanski
-Thema        | Schulung     | schulung, Training, training
+Auftraggeber | IDT          | idt, Idt, IDT GmbH, EDT, E.D.T.
+Auftraggeber | Lakowa       | Lakova, la Coba, La Cobra
+Kunde        | Krzysztof    | Kschischthoff, Krschischtoff
+Thema        | Schulung     | schulung, Training
 ```
 
-### Funktionale Anforderungen
+## Technische Umsetzung (src/main/services/glossar.ts)
 
-1. **Glossar laden**
-   - Beim Start: Glossar aus aktiver Excel-Datei lesen
-   - Cache im Speicher für schnellen Zugriff
-   - Reload bei Datei-Wechsel
-
-2. **LLM-Integration**
-   - Bekannte Begriffe an LLM-Prompt übergeben
-   - LLM erhält Liste aller standardisierten Schreibweisen
-   - Nach LLM-Antwort: Finaler Abgleich mit Glossar
-
-3. **Normalisierung**
-   - Case-insensitive Matching
-   - Fuzzy-Match für ähnliche Schreibweisen (optional)
-   - Polnische Sonderzeichen berücksichtigen (ł, ą, ę, ś, ć, ź, ż, ó, ń)
-
-4. **UI-Feedback**
-   - Bei Korrektur: Anzeigen was korrigiert wurde
-   - Möglichkeit, neue Begriffe zum Glossar hinzuzufügen
-
-## Technische Umsetzung
-
-### Datenstruktur
+### Datenstrukturen
 
 ```typescript
-type GlossarKategorie = 'Auftraggeber' | 'Thema' | 'Kunde' | 'Sonstiges'
+export type GlossarKategorie = 'Auftraggeber' | 'Thema' | 'Kunde' | 'Sonstiges'
 
-type GlossarEintrag = {
+export type GlossarEintrag = {
   kategorie: GlossarKategorie
-  begriff: string           // Standardisierte Schreibweise
-  synonyme: string[]        // Alternative Schreibweisen
+  begriff: string           // Standardized spelling
+  synonyme: string[]        // Alternative spellings
 }
 
-type Glossar = {
+export type Glossar = {
   eintraege: GlossarEintrag[]
   byKategorie: Map<GlossarKategorie, GlossarEintrag[]>
   lookupMap: Map<string, string>  // synonym (lowercase) -> begriff
@@ -73,44 +50,80 @@ type Glossar = {
 ### Service-Funktionen
 
 ```typescript
-// glossar.ts
-loadGlossar(xlsxPath: string): Promise<Glossar>
+// Load glossar from Excel file's "Glossar" sheet (with caching)
+loadGlossar(xlsxPath: string): Promise<Glossar | null>
+
+// Load and merge glossars from multiple files
+loadGlossarsFromPaths(paths: string[]): Promise<Glossar | null>
+
+// Normalize text using lookup map
 normalizeText(text: string, glossar: Glossar): string
+
+// Get known terms for LLM prompt
 getKnownTerms(glossar: Glossar, kategorie: GlossarKategorie): string[]
-addGlossarEntry(xlsxPath: string, entry: GlossarEintrag): Promise<void>
+getAllKnownTerms(glossar: Glossar): { auftraggeber, themen, kunden }
+
+// Clear cache (when file changes)
+clearGlossarCache(xlsxPath?: string): void
+
+// Create Glossar sheet from existing data
+createGlossarSheet(xlsxPath: string, auftraggeber: string): Promise<Glossar | null>
+
+// Ensure Glossar exists, create if missing
+ensureGlossar(xlsxPath: string, auftraggeber: string): Promise<Glossar | null>
 ```
 
-### LLM-Prompt Erweiterung
+### IPC Handler (src/main/ipc/glossarHandlers.ts)
 
-```
-Bekannte Auftraggeber: {glossar.auftraggeber}
-Bekannte Themen: {glossar.themen}
-Bekannte Kunden: {glossar.kunden}
-
-WICHTIG: Verwende EXAKT die angegebenen Schreibweisen!
+```typescript
+ipcMain.handle('glossar:reload', async () => reloadGlossar())
+ipcMain.handle('glossar:getClients', () => getCurrentClients())
+ipcMain.handle('glossar:getThemes', () => getCurrentThemes())
 ```
 
-## Abhängigkeiten
+### LLM-Integration (src/main/services/llm.ts)
 
-- FEAT-006: Excel Service (Lesen/Schreiben)
-- exceljs Bibliothek
+Bekannte Begriffe werden an LLM-Prompt übergeben:
+
+```typescript
+const SYSTEM_PROMPT = `
+=== BEKANNTE AUFTRAGGEBER (NUR DIESE SIND GÜLTIG!) ===
+{clients}
+
+=== BEKANNTE THEMEN (falls vorhanden, nutze exakte Schreibweise) ===
+{themes}
+
+KRITISCH - AUFTRAGGEBER ERKENNUNG:
+- Der Auftraggeber MUSS einer aus der obigen Liste sein!
+- Erkenne phonetisch ähnliche Namen: "EDT"/"E.D.T." → "IDT", "Lakova"/"la Coba"/"La Cobra" → "Lakowa"
+`
+
+// parseActivity receives clients and themes from glossar
+export async function parseActivity(
+  transcript: string,
+  clients: string[] = [],
+  themes: string[] = []
+): Promise<Activity>
+```
+
+### Auto-Erstellung
+
+Wenn kein Glossar-Sheet existiert, wird es automatisch aus vorhandenen Daten erstellt:
+- Auftraggeber aus der Config
+- Thema-Werte werden aus allen Monats-Sheets (Spalte B) extrahiert
 
 ## Akzeptanzkriterien
 
-- [ ] Glossar-Sheet wird aus Excel gelesen
-- [ ] LLM nutzt Glossar-Begriffe für Normalisierung
-- [ ] "lotus" wird zu "LOTUS" korrigiert
-- [ ] "Kschischthoff" wird zu "Krzysztof" korrigiert
-- [ ] UI zeigt angewendete Korrekturen an
-- [ ] Neue Begriffe können hinzugefügt werden
+- [x] Glossar-Sheet wird aus Excel gelesen
+- [x] Glossar aus mehreren aktiven Dateien wird gemerged
+- [x] LLM nutzt Glossar-Begriffe für Normalisierung
+- [x] Case-insensitive Lookup (lotus → LOTUS)
+- [x] Glossar-Sheet wird automatisch erstellt wenn nicht vorhanden
+- [x] Caching für Performance
+- [ ] UI zeigt angewendete Korrekturen an (future)
+- [ ] Neue Begriffe können per UI hinzugefügt werden (future)
 
-## Priorität
+## Abhängigkeiten
 
-Hoch - Verbessert Datenqualität erheblich
-
-## Geschätzter Aufwand
-
-- Glossar-Parser: 2h
-- LLM-Integration: 1h
-- Normalisierungs-Logik: 2h
-- UI für Korrekturen: 1h
+- FEAT-006: Excel Service (xlsx Bibliothek)
+- FEAT-012: XLSX Backup (vor Glossar-Erstellung)

@@ -5,20 +5,32 @@ import { is } from '@electron-toolkit/utils'
 let tray: Tray | null = null
 
 export function createTray(mainWindow: BrowserWindow): Tray {
-  // In dev, use project root; in prod, use resourcesPath
+  // Load icon from resources
   const resourcesDir = is.dev
     ? join(app.getAppPath(), 'resources')
     : join(process.resourcesPath, 'resources')
 
   const iconPath = join(resourcesDir, 'icon.png')
-  const icon = nativeImage.createFromPath(iconPath)
+  console.log('[Tray] Loading icon from:', iconPath)
 
-  // Mark as template for proper macOS menu bar appearance
+  let icon = nativeImage.createFromPath(iconPath)
+  console.log('[Tray] Icon loaded, empty:', icon.isEmpty(), 'size:', icon.getSize())
+
+  // Resize for menu bar (macOS recommends 16x16 or 22x22)
+  icon = icon.resize({ width: 22, height: 22 })
+
+  tray = new Tray(icon)
+  console.log('[Tray] Tray instance created')
+
+  // On macOS, set a title as fallback if icon doesn't show
   if (process.platform === 'darwin') {
-    icon.setTemplateImage(true)
+    tray.setTitle('A')  // Short title visible in menu bar
   }
 
-  tray = new Tray(icon.resize({ width: 16, height: 16 }))
+  // Verify tray exists
+  if (tray) {
+    console.log('[Tray] Tray is valid, bounds:', tray.getBounds())
+  }
 
   const contextMenu = Menu.buildFromTemplate([
     {

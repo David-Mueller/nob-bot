@@ -1,32 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-
-type Activity = {
-  auftraggeber: string | null
-  thema: string | null
-  beschreibung: string
-  stunden: number | null
-  km: number
-  auslagen: number
-  datum: string | null
-}
-
-type ActivityEntry = {
-  id: number
-  activity: Activity
-  transcript: string
-  timestamp: Date
-  saved: boolean
-}
+import type { Activity, ActivityEntry } from '@shared/types'
 
 const props = defineProps<{
   entries: ActivityEntry[]
+  savingIds: Set<number>
+  editingId: number | null
+  isProcessing: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'save', entry: ActivityEntry): void
   (e: 'edit', entry: ActivityEntry): void
   (e: 'delete', entry: ActivityEntry): void
+  (e: 'openFile', filePath: string): void
 }>()
 
 const sortedEntries = computed(() => {
@@ -73,8 +60,26 @@ const getRequiredMissing = (activity: Activity): string[] => {
 // Optional fields that are missing (for warning display only)
 const getOptionalMissing = (activity: Activity): string[] => {
   const missing: string[] = []
-  if (activity.stunden === null) missing.push('Zeit')
+  if (activity.minuten === null) missing.push('Zeit')
   return missing
+}
+
+// Format minutes to readable format
+const formatTime = (minutes: number): string => {
+  if (minutes < 60) {
+    return `${minutes} min`
+  }
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (m === 0) {
+    return `${h}h`
+  }
+  return `${h}h ${m}min`
+}
+
+// Check if entry is currently being edited via voice
+const isEntryBeingEdited = (entryId: number): boolean => {
+  return props.editingId === entryId && props.isProcessing
 }
 </script>
 
@@ -97,7 +102,7 @@ const getOptionalMissing = (activity: Activity): string[] => {
         v-for="entry in sortedEntries"
         :key="entry.id"
         :class="[
-          'rounded-lg border p-4 transition-shadow hover:shadow-md',
+          'relative rounded-lg border p-4 transition-shadow hover:shadow-md overflow-hidden',
           getStatusColor(entry)
         ]"
       >
@@ -154,8 +159,8 @@ const getOptionalMissing = (activity: Activity): string[] => {
             <span v-if="entry.activity.datum">
               <span class="text-gray-500">Datum:</span> {{ formatActivityDate(entry.activity.datum) }}
             </span>
-            <span v-if="entry.activity.stunden !== null">
-              <span class="text-gray-500">Zeit:</span> {{ entry.activity.stunden }}h
+            <span v-if="entry.activity.minuten !== null">
+              <span class="text-gray-500">Zeit:</span> {{ formatTime(entry.activity.minuten) }}
             </span>
             <span v-if="entry.activity.km && entry.activity.km > 0">
               <span class="text-gray-500">KM:</span> {{ entry.activity.km }}
@@ -192,25 +197,72 @@ const getOptionalMissing = (activity: Activity): string[] => {
           <button
             v-if="!entry.saved"
             @click="emit('save', entry)"
-            :disabled="getRequiredMissing(entry.activity).length > 0"
+            :disabled="getRequiredMissing(entry.activity).length > 0 || savingIds.has(entry.id) || isEntryBeingEdited(entry.id)"
             class="text-xs px-3 py-1.5 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded transition-colors"
           >
-            Speichern
+            {{ savingIds.has(entry.id) ? 'Speichert...' : 'Speichern' }}
           </button>
           <button
-            @click="emit('edit', entry)"
-            class="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
+            v-if="entry.saved && entry.savedFilePath"
+            @click="emit('openFile', entry.savedFilePath!)"
+            class="text-xs px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors flex items-center gap-1"
           >
-            Bearbeiten
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+            </svg>
+            Excel öffnen
+          </button>
+          <button
+            v-if="!entry.saved"
+            @click="emit('edit', entry)"
+            :disabled="savingIds.has(entry.id) || isEntryBeingEdited(entry.id)"
+            class="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {{ isEntryBeingEdited(entry.id) ? 'Bearbeitet...' : 'Bearbeiten' }}
           </button>
           <button
             @click="emit('delete', entry)"
-            class="text-xs px-3 py-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+            :disabled="savingIds.has(entry.id) || isEntryBeingEdited(entry.id)"
+            class="text-xs px-3 py-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Löschen
           </button>
+        </div>
+
+        <!-- Loading Progress Bar -->
+        <div
+          v-if="savingIds.has(entry.id) || isEntryBeingEdited(entry.id)"
+          class="absolute bottom-0 left-0 right-0 h-1 bg-gray-200 rounded-b-lg overflow-hidden"
+        >
+          <div
+            :class="[
+              'h-full animate-progress-indeterminate',
+              savingIds.has(entry.id) ? 'bg-green-500' : 'bg-amber-500'
+            ]"
+          ></div>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+    width: 50%;
+  }
+  50% {
+    transform: translateX(50%);
+    width: 50%;
+  }
+  100% {
+    transform: translateX(200%);
+    width: 50%;
+  }
+}
+
+.animate-progress-indeterminate {
+  animation: progress-indeterminate 1.5s ease-in-out infinite;
+}
+</style>

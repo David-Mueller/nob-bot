@@ -6,6 +6,11 @@ import { resolve } from 'path'
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: {
+        '@shared': resolve(__dirname, 'src/shared')
+      }
+    },
     build: {
       rollupOptions: {
         input: {
@@ -16,6 +21,11 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: {
+        '@shared': resolve(__dirname, 'src/shared')
+      }
+    },
     build: {
       rollupOptions: {
         input: {
@@ -26,6 +36,11 @@ export default defineConfig({
   },
   renderer: {
     root: 'src/renderer',
+    resolve: {
+      alias: {
+        '@shared': resolve(__dirname, 'src/shared')
+      }
+    },
     build: {
       rollupOptions: {
         input: {
