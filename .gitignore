@@ -1,9 +1,11 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 
 # Build output
 out/
 dist/
+coverage/
 
 # Environment variables
 .env

@@ -1,5 +1,5 @@
 import XlsxPopulate, { Workbook } from 'xlsx-populate'
-import { readFile, writeFile } from 'fs/promises'
+import * as fsp from 'fs/promises'
 import { debugLog } from './debugLog'
 
 /**
@@ -12,7 +12,7 @@ import { debugLog } from './debugLog'
  */
 export async function loadWorkbook(filePath: string): Promise<Workbook> {
   debugLog('Workbook', `Loading: ${filePath}`)
-  const buffer = await readFile(filePath)
+  const buffer = await fsp.readFile(filePath)
   const workbook = await XlsxPopulate.fromDataAsync(buffer)
   debugLog('Workbook', 'Loaded successfully')
   return workbook
@@ -24,7 +24,7 @@ export async function loadWorkbook(filePath: string): Promise<Workbook> {
 export async function saveWorkbook(workbook: Workbook, filePath: string): Promise<void> {
   debugLog('Workbook', `Saving: ${filePath}`)
   const output = await workbook.outputAsync()
-  await writeFile(filePath, output as Buffer)
+  await fsp.writeFile(filePath, output as Buffer)
   debugLog('Workbook', 'Saved successfully')
 }
 

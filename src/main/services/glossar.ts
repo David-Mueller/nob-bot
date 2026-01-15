@@ -1,4 +1,4 @@
-import { stat } from 'fs/promises'
+import * as fsp from 'fs/promises'
 import { loadWorkbook, saveWorkbook, type Workbook, type Sheet } from './workbook'
 import { createBackup } from './backup'
 import { validateExcelFile } from './excel'
@@ -45,7 +45,7 @@ export async function loadGlossar(xlsxPath: string): Promise<Glossar | null> {
     await validateExcelFile(xlsxPath)
 
     // Check mtime for cache invalidation
-    const stats = await stat(xlsxPath)
+    const stats = await fsp.stat(xlsxPath)
     const cached = glossarCache.get(xlsxPath)
     if (cached && cached.mtime === stats.mtimeMs) {
       return cached.glossar

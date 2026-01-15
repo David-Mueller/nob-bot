@@ -13,7 +13,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       reportsDirectory: './coverage',
-      include: ['src/**/*.{ts,vue}'],
+      include: ['src/main/**/*.ts'],
       exclude: [
         'src/**/*.d.ts',
         'src/**/*.spec.ts',

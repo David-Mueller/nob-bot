@@ -1,102 +1,174 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { normalize, resolve } from 'path'
+import { app } from 'electron'
 
-// Mock the config and electron modules
-vi.mock('../../../src/main/services/config', () => ({
+// Mock config before importing pathValidator
+vi.mock('@main/services/config', () => ({
   getConfig: vi.fn(() => ({
-    xlsxBasePath: '/allowed/path'
+    xlsxBasePath: '/home/user/xlsx',
+    xlsxFiles: [],
+    settings: {
+      hotkey: '',
+      openaiApiKey: '',
+      hasApiKey: false,
+      ttsEnabled: false,
+      ttsVoice: 'nova'
+    }
   }))
 }))
 
-vi.mock('electron', () => ({
-  app: {
-    getPath: vi.fn((name: string) => {
+// Import actual module to get coverage
+import {
+  getAllowedBasePaths,
+  validatePath,
+  validateExcelPath
+} from '@main/utils/pathValidator'
+import { getConfig } from '@main/services/config'
+
+describe('pathValidator', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // Setup mock returns for electron app - these should match the paths we test
+    vi.mocked(app.getPath).mockImplementation((name: string) => {
       if (name === 'home') return '/home/user'
       if (name === 'documents') return '/home/user/Documents'
       if (name === 'userData') return '/home/user/.app'
       return '/tmp'
     })
-  }
-}))
-
-describe('Path Validation Logic', () => {
-  describe('Path Traversal Detection', () => {
-    it('should detect simple path traversal', () => {
-      const maliciousPath = '/allowed/path/../../../etc/passwd'
-      expect(maliciousPath.includes('..')).toBe(true)
-    })
-
-    it('should detect encoded path traversal', () => {
-      const maliciousPath = '/allowed/path/..%2F..%2Fetc/passwd'
-      // After URL decode this would contain '..'
-      expect(decodeURIComponent(maliciousPath).includes('..')).toBe(true)
-    })
-
-    it('should allow normal paths', () => {
-      const normalPath = '/allowed/path/subdir/file.xlsx'
-      expect(normalPath.includes('..')).toBe(false)
+    // Ensure config returns expected value
+    vi.mocked(getConfig).mockReturnValue({
+      xlsxBasePath: '/home/user/xlsx',
+      xlsxFiles: [],
+      settings: {
+        hotkey: '',
+        openaiApiKey: '',
+        hasApiKey: false,
+        ttsEnabled: false,
+        ttsVoice: 'nova'
+      }
     })
   })
 
-  describe('Excel File Extension Validation', () => {
-    it('should accept .xlsx files', () => {
-      expect('file.xlsx'.match(/\.(xlsx|xls)$/i)).toBeTruthy()
+  describe('getAllowedBasePaths', () => {
+    it('should return xlsxBasePath from config', () => {
+      const paths = getAllowedBasePaths()
+      expect(paths).toContain('/home/user/xlsx')
     })
 
-    it('should accept .xls files', () => {
-      expect('file.xls'.match(/\.(xlsx|xls)$/i)).toBeTruthy()
+    it('should return home directory', () => {
+      const paths = getAllowedBasePaths()
+      expect(paths).toContain('/home/user')
     })
 
-    it('should accept case-insensitive extensions', () => {
-      expect('file.XLSX'.match(/\.(xlsx|xls)$/i)).toBeTruthy()
-      expect('file.XLS'.match(/\.(xlsx|xls)$/i)).toBeTruthy()
+    it('should return documents directory', () => {
+      const paths = getAllowedBasePaths()
+      expect(paths).toContain('/home/user/Documents')
     })
 
-    it('should reject non-Excel files', () => {
-      expect('file.txt'.match(/\.(xlsx|xls)$/i)).toBeFalsy()
-      expect('file.csv'.match(/\.(xlsx|xls)$/i)).toBeFalsy()
-      expect('file.xlsm'.match(/\.(xlsx|xls)$/i)).toBeFalsy()
+    it('should return userData directory', () => {
+      const paths = getAllowedBasePaths()
+      expect(paths).toContain('/home/user/.app')
     })
 
-    it('should reject files with fake extensions', () => {
-      expect('file.xlsx.exe'.match(/\.(xlsx|xls)$/i)).toBeFalsy()
-      expect('file.xls.bat'.match(/\.(xlsx|xls)$/i)).toBeFalsy()
+    it('should filter out falsy values', () => {
+      vi.mocked(getConfig).mockReturnValue({
+        xlsxBasePath: '',
+        xlsxFiles: [],
+        settings: {
+          hotkey: '',
+          openaiApiKey: '',
+          hasApiKey: false,
+          ttsEnabled: false,
+          ttsVoice: 'nova'
+        }
+      })
+      const paths = getAllowedBasePaths()
+      // Empty xlsxBasePath should be filtered out
+      expect(paths.every((p) => p.length > 0)).toBe(true)
     })
   })
 
-  describe('Path Normalization', () => {
-    it('should normalize relative paths', () => {
-      const normalized = normalize(resolve('./file.xlsx'))
-      expect(normalized.startsWith('/')).toBe(true)
-    })
-
-    it('should resolve to absolute path', () => {
-      const resolved = resolve('file.xlsx')
-      expect(resolved).toMatch(/^\//)
-    })
-  })
-
-  describe('Allowed Base Paths', () => {
-    it('should check if path starts with allowed base', () => {
-      const allowedBases = ['/allowed/path', '/home/user']
-      const testPath = '/allowed/path/subdir/file.xlsx'
-
-      const isAllowed = allowedBases.some((base) =>
-        testPath.startsWith(normalize(resolve(base)))
+  describe('validatePath', () => {
+    it('should reject path traversal with ..', () => {
+      expect(() => validatePath('/home/user/../../../etc/passwd')).toThrow(
+        'Path traversal not allowed'
       )
-
-      expect(isAllowed).toBe(true)
     })
 
-    it('should reject paths outside allowed bases', () => {
-      const allowedBases = ['/allowed/path', '/home/user']
-      const testPath = '/etc/passwd'
+    it('should reject simple .. at start', () => {
+      expect(() => validatePath('../etc/passwd')).toThrow('Path traversal not allowed')
+    })
 
-      const isAllowed = allowedBases.some((base) =>
-        testPath.startsWith(normalize(resolve(base)))
+    it('should reject paths outside allowed directories', () => {
+      expect(() => validatePath('/etc/passwd')).toThrow('Path outside allowed directories')
+    })
+
+    it('should accept paths within home directory', () => {
+      const result = validatePath('/home/user/myfile.txt')
+      expect(result).toBe('/home/user/myfile.txt')
+    })
+
+    it('should accept paths within xlsx base path', () => {
+      const result = validatePath('/home/user/xlsx/report.xlsx')
+      expect(result).toBe('/home/user/xlsx/report.xlsx')
+    })
+
+    it('should accept paths within documents directory', () => {
+      const result = validatePath('/home/user/Documents/report.txt')
+      expect(result).toBe('/home/user/Documents/report.txt')
+    })
+
+    it('should accept paths within userData directory', () => {
+      const result = validatePath('/home/user/.app/config.json')
+      expect(result).toBe('/home/user/.app/config.json')
+    })
+
+    it('should return normalized absolute path', () => {
+      const result = validatePath('/home/user/./subdir/file.txt')
+      expect(result).toBe('/home/user/subdir/file.txt')
+    })
+  })
+
+  describe('validateExcelPath', () => {
+    it('should accept .xlsx files in allowed directories', () => {
+      const result = validateExcelPath('/home/user/xlsx/report.xlsx')
+      expect(result).toBe('/home/user/xlsx/report.xlsx')
+    })
+
+    it('should accept .xls files in allowed directories', () => {
+      const result = validateExcelPath('/home/user/xlsx/report.xls')
+      expect(result).toBe('/home/user/xlsx/report.xls')
+    })
+
+    it('should accept case-insensitive .XLSX', () => {
+      const result = validateExcelPath('/home/user/Documents/report.XLSX')
+      expect(result).toBe('/home/user/Documents/report.XLSX')
+    })
+
+    it('should accept case-insensitive .XLS', () => {
+      const result = validateExcelPath('/home/user/Documents/report.XLS')
+      expect(result).toBe('/home/user/Documents/report.XLS')
+    })
+
+    it('should reject non-Excel files in allowed directories', () => {
+      expect(() => validateExcelPath('/home/user/file.txt')).toThrow('Not an Excel file')
+    })
+
+    it('should reject .csv files in allowed directories', () => {
+      expect(() => validateExcelPath('/home/user/data.csv')).toThrow('Not an Excel file')
+    })
+
+    it('should reject files with fake extensions in allowed directories', () => {
+      expect(() => validateExcelPath('/home/user/file.xlsx.exe')).toThrow('Not an Excel file')
+    })
+
+    it('should reject path traversal attempts', () => {
+      expect(() => validateExcelPath('../../../etc/passwd.xlsx')).toThrow(
+        'Path traversal not allowed'
       )
+    })
 
-      expect(isAllowed).toBe(false)
+    it('should reject Excel files outside allowed directories', () => {
+      expect(() => validateExcelPath('/etc/report.xlsx')).toThrow('Path outside allowed directories')
     })
   })
 })

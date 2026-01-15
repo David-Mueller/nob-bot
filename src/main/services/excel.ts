@@ -1,4 +1,4 @@
-import { stat } from 'fs/promises'
+import * as fsp from 'fs/promises'
 import { createBackup } from './backup'
 import { debugLog } from './debugLog'
 import { loadWorkbook, saveWorkbook, XlsxPopulate } from './workbook'
@@ -25,7 +25,7 @@ export async function validateExcelFile(filePath: string): Promise<void> {
     throw new Error('Invalid file extension. Only .xlsx and .xls files are allowed.')
   }
 
-  const stats = await stat(filePath)
+  const stats = await fsp.stat(filePath)
   if (stats.size > MAX_FILE_SIZE) {
     throw new Error(`File too large: ${(stats.size / 1024 / 1024).toFixed(1)}MB (max ${MAX_FILE_SIZE / 1024 / 1024}MB)`)
   }
@@ -175,9 +175,10 @@ export async function getActivities(
     if (datumValue !== undefined && datumValue !== null) {
       if (typeof datumValue === 'number') {
         const jsDate = XlsxPopulate.numberToDate(datumValue)
-        datum = jsDate.toISOString().split('T')[0]
+        // Use local date methods to avoid timezone shift from toISOString()
+        datum = `${jsDate.getFullYear()}-${String(jsDate.getMonth() + 1).padStart(2, '0')}-${String(jsDate.getDate()).padStart(2, '0')}`
       } else if (datumValue instanceof Date) {
-        datum = datumValue.toISOString().split('T')[0]
+        datum = `${datumValue.getFullYear()}-${String(datumValue.getMonth() + 1).padStart(2, '0')}-${String(datumValue.getDate()).padStart(2, '0')}`
       } else {
         datum = String(datumValue)
       }

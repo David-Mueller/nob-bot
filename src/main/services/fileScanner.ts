@@ -1,6 +1,6 @@
 import { glob } from 'glob'
 import { join, basename } from 'path'
-import { existsSync, readdirSync } from 'fs'
+import * as fs from 'fs'
 import { ChatOpenAI } from '@langchain/openai'
 import { z } from 'zod'
 
@@ -69,7 +69,7 @@ export async function scanDirectory(basePath: string): Promise<ScannedFile[]> {
   }
 
   // Check if base path exists
-  const pathExists = existsSync(basePath)
+  const pathExists = fs.existsSync(basePath)
   console.log(`[Scanner] Path exists: ${pathExists}`)
 
   if (!pathExists) {
@@ -79,7 +79,7 @@ export async function scanDirectory(basePath: string): Promise<ScannedFile[]> {
 
   // Debug: list all files in directory
   try {
-    const allFiles = readdirSync(basePath)
+    const allFiles = fs.readdirSync(basePath)
     console.log(`[Scanner] All files in directory (${allFiles.length}):`, allFiles)
     const xlsxFiles = allFiles.filter(f => f.toLowerCase().endsWith('.xlsx'))
     console.log(`[Scanner] All xlsx files (${xlsxFiles.length}):`, xlsxFiles)
@@ -111,18 +111,18 @@ export async function scanDirectory(basePath: string): Promise<ScannedFile[]> {
 
     // If glob returns empty but we know files exist, use fallback
     if (files.length === 0) {
-      console.log(`[Scanner] Glob returned empty, using readdirSync fallback...`)
-      const allFiles = readdirSync(basePath)
+      console.log(`[Scanner] Glob returned empty, using fs.readdirSync fallback...`)
+      const allFiles = fs.readdirSync(basePath)
       const matchingFiles = allFiles.filter(f => /^lv.*\.xlsx$/i.test(f))
       files = matchingFiles.map(f => join(basePath, f))
       console.log(`[Scanner] Fallback found ${files.length} files:`, files)
     }
   } catch (err) {
     console.error('[Scanner] Glob error:', err)
-    // Fallback to readdirSync on error
+    // Fallback to fs.readdirSync on error
     try {
-      console.log(`[Scanner] Using readdirSync fallback due to error...`)
-      const allFiles = readdirSync(basePath)
+      console.log(`[Scanner] Using fs.readdirSync fallback due to error...`)
+      const allFiles = fs.readdirSync(basePath)
       const matchingFiles = allFiles.filter(f => /^lv.*\.xlsx$/i.test(f))
       files = matchingFiles.map(f => join(basePath, f))
       console.log(`[Scanner] Fallback found ${files.length} files`)
