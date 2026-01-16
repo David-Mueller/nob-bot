@@ -2,6 +2,8 @@
 
 Desktop-App zur Erfassung von Arbeitsaktivitäten per Spracheingabe.
 
+![Screenshot](docs/screenshot.png)
+
 ## Features
 
 - **Voice Recording**: Aktivitäten per Sprache erfassen
